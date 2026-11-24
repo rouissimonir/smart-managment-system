@@ -9,6 +9,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -75,6 +76,14 @@ public class DocumentController {
     @GetMapping("/api/projects/{projectId}/documents")
     public List<DocumentResponse> listForProject(@PathVariable UUID projectId) {
         return service.listByProject(projectId);
+    }
+
+    /** Same visibility as download: a USER may delete a document on a project they own. */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
+    @DeleteMapping("/api/documents/{id}")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        service.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     /** Content-Disposition header values must not contain raw quotes/newlines. */

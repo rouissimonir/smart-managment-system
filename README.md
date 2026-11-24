@@ -64,6 +64,10 @@ stateless-session URL rule (`anyRequest().authenticated()`):
 | MANAGER | full CRUD | full CRUD | full CRUD |
 | USER | read only | read/list **own projects only** | read/list **assigned tasks only**; can update status/description/title/due date on a task assigned to them (cannot reassign, unassign, or move it) |
 
+`GET /api/users` is ADMIN/MANAGER only. The project form and the task form use it
+for the owner and assignee dropdowns. A new project defaults the owner to the
+signed-in manager.
+
 Seed accounts (BCrypt-hashed, Flyway `V4__seed_users.sql`) for local dev/demo:
 
 | Email | Password | Role |
@@ -149,7 +153,14 @@ Locked choices, and what they cost:
 Chunks are internal: nothing returns their text yet. `GET /api/documents/{id}` exposes
 `status`, `chunkCount`, `embeddingModel`, `errorMessage` and `processedAt`.
 
-Deleting a document deletes its chunks (`ON DELETE CASCADE`).
+Deleting a document deletes its chunks (`ON DELETE CASCADE`) and, after that
+transaction commits, the file on disk. Deleting a project does the same for
+every document that belonged to it. `DELETE /api/documents/{id}` follows the
+same visibility rule as download.
+
+A project created without an `ownerId` is owned by the caller. An update that
+omits `ownerId` keeps the current owner, so an edit form cannot accidentally
+clear it. The project form sends the selected owner explicitly.
 
 ## Run it
 
@@ -221,7 +232,8 @@ trigger it.
 | Customers | `GET/POST /api/customers`, `GET/PUT/DELETE /api/customers/{id}` | `q` |
 | Projects | `GET/POST /api/projects`, `GET/PUT/DELETE /api/projects/{id}` | `q`, `status`, `customerId`, `ownerId`, `overdue` |
 | Tasks | `GET/POST /api/tasks`, `GET/PUT/DELETE /api/tasks/{id}` | `q`, `status`, `projectId`, `assigneeId` |
-| Documents | `POST /api/documents` (multipart, `file` + optional `projectId`), `GET /api/documents/{id}`, `GET /api/documents/{id}/download`, `POST /api/documents/{id}/reprocess` (ADMIN/MANAGER), `GET /api/projects/{id}/documents` | — |
+| Documents | `POST /api/documents` (multipart, `file` + optional `projectId`), `GET /api/documents/{id}`, `GET /api/documents/{id}/download`, `DELETE /api/documents/{id}`, `POST /api/documents/{id}/reprocess` (ADMIN/MANAGER), `GET /api/projects/{id}/documents` | — |
+| Users | `GET /api/users` (ADMIN/MANAGER) — id, email, full name, role. No password hash | — |
 
 All endpoints except `/api/auth/**` and `/api/health` require a `Bearer` access token.
 List endpoints take `page`, `size` (max 100), `sort` (allowlisted per resource). Bodies

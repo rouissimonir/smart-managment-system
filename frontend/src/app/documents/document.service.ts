@@ -26,6 +26,14 @@ export class DocumentService {
     return this.http.post<AppDocument>(url, form);
   }
 
+  reprocess(id: string): Observable<AppDocument> {
+    return this.http.post<AppDocument>(`${this.baseUrl}/${id}/reprocess`, {});
+  }
+
+  remove(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/${id}`);
+  }
+
   /** Fetches the file as a blob and triggers a browser download via a temporary anchor. */
   download(doc: AppDocument): void {
     this.http.get(`${this.baseUrl}/${doc.id}/download`, { responseType: 'blob' }).subscribe((blob) => {

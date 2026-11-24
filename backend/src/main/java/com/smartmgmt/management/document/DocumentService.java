@@ -137,6 +137,14 @@ public class DocumentService {
         return new DownloadPayload(document, storage.load(document.getStoragePath()));
     }
 
+    public void delete(UUID id) {
+        Document document = findOrThrow(id);
+        requireVisible(document.getProject());
+        String storagePath = document.getStoragePath();
+        documents.deleteById(document.getId());
+        StorageCleanup.afterCommit(List.of(storagePath), storage::deleteQuietly);
+    }
+
     private Project resolveProject(UUID projectId) {
         if (projectId == null) {
             return null;

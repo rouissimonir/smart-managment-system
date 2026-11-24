@@ -31,6 +31,12 @@
         <select formControlName="status">
           @for (s of taskStatuses; track s) { <option [value]="s">{{ s }}</option> }
         </select>
+        <select formControlName="assigneeId">
+          <option value="">Unassigned</option>
+          @for (u of users(); track u.id) {
+            <option [value]="u.id">{{ u.fullName || u.email }}</option>
+          }
+        </select>
         <input type="date" formControlName="dueDate" />
         <button class="btn btn-primary" type="submit">Add task</button>
       </form>
@@ -41,7 +47,7 @@
     } @else {
       <table>
         <thead>
-          <tr><th>Title</th><th>Status</th><th>Due</th><th></th></tr>
+          <tr><th>Title</th><th>Status</th><th>Assignee</th><th>Due</th><th></th></tr>
         </thead>
         <tbody>
           @for (t of tasks(); track t.id) {
@@ -56,6 +62,7 @@
                   <span class="badge">{{ t.status }}</span>
                 }
               </td>
+              <td>{{ t.assigneeName || '—' }}</td>
               <td>
                 {{ t.dueDate || '—' }}
                 @if (t.overdue) { <span class="badge overdue">overdue</span> }
@@ -99,11 +106,25 @@
             <tr>
               <td>{{ d.name }}</td>
               <td>{{ formatSize(d.sizeBytes) }}</td>
-              <td><span class="badge">{{ d.status }}</span></td>
+              <td>
+                <span class="badge">{{ d.status }}</span>
+                @if (d.status === 'READY') {
+                  <span class="muted"> {{ d.chunkCount }} chunks</span>
+                }
+                @if (d.errorMessage) {
+                  <div class="error">{{ d.errorMessage }}</div>
+                }
+              </td>
               <td>{{ d.uploadedByName || '—' }}</td>
               <td>
                 <div class="row-actions">
                   <button class="btn btn-sm" (click)="downloadDocument(d)">Download</button>
+                  @if (auth.hasRole('ADMIN', 'MANAGER') && d.status !== 'PROCESSING') {
+                    <button class="btn btn-sm" (click)="reprocessDocument(d)">Reprocess</button>
+                  }
+                  @if (canUploadDocument()) {
+                    <button class="btn btn-sm btn-danger" (click)="removeDocument(d)">Delete</button>
+                  }
                 </div>
               </td>
             </tr>

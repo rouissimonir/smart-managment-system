@@ -34,6 +34,15 @@
     </div>
 
     <div class="field">
+      <label for="ownerId">Owner</label>
+      <select id="ownerId" formControlName="ownerId">
+        @for (u of users(); track u.id) {
+          <option [value]="u.id">{{ u.fullName || u.email }} ({{ u.role }})</option>
+        }
+      </select>
+    </div>
+
+    <div class="field">
       <label for="startDate">Start date</label>
       <input id="startDate" type="date" formControlName="startDate" />
     </div>
