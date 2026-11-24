@@ -3,9 +3,41 @@
 Enterprise project & knowledge platform: Angular + Spring Boot + PostgreSQL/pgvector,
 with a RAG assistant that answers from **app data and documents** (not a generic chatbot).
 
-**Today this repo has the management CRUD foundation, JWT auth/RBAC, and document
-upload.** Audit trail and RAG are planned, not implemented. Full roadmap:
-[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+The assistant answers from **this application's data and documents**. A question about
+who owns a project is a read-only tool call. A question about a policy is retrieval
+with citations. It does not get a SQL string, and it is told to say "I don't know"
+when the excerpts do not contain the answer.
+
+Full roadmap: [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+
+## Architecture
+
+One Spring Boot JAR. Modules are packages, not services.
+
+```text
+Angular
+  │  JWT
+  ▼
+Spring Boot
+  ├── management   customers, projects, tasks
+  ├── documents    upload, extract, chunk, embed
+  ├── search       keyword (FTS) + semantic (pgvector) + RRF
+  └── chat         intent router → tools and/or RAG → citations
+         │
+         ▼
+PostgreSQL 16 + pgvector          local disk (uploads/)
+```
+
+```text
+question
+   │
+   ▼
+intent router (rules, not a model call)
+   ├── GENERAL     short help, no data
+   ├── SQL_DATA    fixed tools, caller's role applied inside the tool
+   ├── VECTOR_RAG  embed → top-k chunks the caller may see → answer + sources
+   └── HYBRID      tools and chunks, then one answer
+```
 
 ## Stack
 
@@ -28,8 +60,8 @@ smart-managment-sytem/
   docker-compose.yml      # Postgres + pgvector
   backend/                # Spring Boot API
   frontend/               # Angular app
-  observability/          # Prometheus / Grafana (later)
-  eval/                   # RAG eval dataset + runner (later)
+  observability/          # Prometheus / Grafana (not wired)
+  eval/                   # retrieval dataset + hit-rate script
 ```
 
 ## Current status
@@ -45,7 +77,8 @@ smart-managment-sytem/
 | Keyword + semantic search | Done (`GET /api/search`, keyword / semantic / hybrid) |
 | RAG chatbot + citations | Done (`POST /api/chat`, sources on every grounded answer) |
 | Database-aware chat (read-only tools) | Done (intent router + overdue / project / task / customer tools) |
-| Redis, WebSocket, observability, eval, Docker deploy | Later |
+| Retrieval eval | Done (`eval/dataset.jsonl`, `eval/score.py`) |
+| Redis, WebSocket, observability, Docker deploy | Later |
 
 ## Auth & RBAC
 
@@ -246,7 +279,10 @@ from `POST /api/projects`, MANAGER allowed, expired token rejected, bad sort fie
 rejected). `DocumentControllerTest` covers upload → get → download → list-by-project
 and rejects an unsupported file type; `DocumentRbacTest` covers USER upload restricted
 to an owned project (and blocked for a project-less upload) plus the anonymous-401 case,
-and that reprocessing is ADMIN/MANAGER-only. `ChunkerTest` pins the window arithmetic
+and that reprocessing is ADMIN/MANAGER-only. `SearchRankingTest` covers reciprocal rank
+fusion and snippets. `GroundingTest` checks that "I don't know." drops citations.
+`IntentRouterTest` and `ChatRoutingTest` check that "Who owns Project Alpha?" stays on
+the tool path and "What is the refund policy?" calls retrieval instead. `ChunkerTest` pins the window arithmetic
 (contiguous indices, real overlap, page labels, full coverage); `DocumentIngestionTest`
 runs the pipeline end to end against Postgres — READY with 1536-dim vectors, page labels
 from a generated two-page PDF, a corrupt file ending FAILED with a message, reprocess
@@ -273,8 +309,29 @@ use DTOs; lists return a `PageResponse` envelope. Validation errors are RFC 9457
 `ProblemDetail` (400 + `errors`); unknown ids return 404; RBAC/ownership denials return
 403; missing/invalid/expired tokens return 401.
 
-README sections for the audit trail, RAG + citations, SQL-tool safety, and eval will be
-added when those phases land.
+## Evaluation
+
+`eval/dataset.jsonl` holds retrieval questions. Each scored row names the file that
+should appear in the top results. `eval/score.py` logs in, calls `GET /api/search`,
+and prints hit-rate. Rows with `expected_source: null` are listed and not scored.
+
+```bash
+python3 eval/score.py --self-test
+python3 eval/score.py --base http://localhost:8080 --email manager@local --password manager123 --mode HYBRID --k 5
+```
+
+The two policy files the questions refer to ship in `backend/src/main/resources/demo/`.
+They have to be uploaded (or loaded by the demo seeder) and finish ingestion before a
+live score means anything. Keyword mode can hit "Refund Policy.md" because the body
+says "refund" and "30 days". "What is the customer cancellation policy?" should miss
+on keyword search: the file is named "Account Closure Terms.md" and the body says
+"subscription termination". That question is the semantic check, and it needs
+`OPENAI_API_KEY` plus a reprocess so the stored vectors are not the offline hash.
+
+Change one knob (chunk size in `application.yml`, or `--k`), run the script again,
+and record both rates. This README does not invent a before/after number.
+
+`eval/score.py --self-test` checks the scorer itself and does not need the API.
 
 ## Known gaps
 
