@@ -1,0 +1,36 @@
+<section class="card">
+  @if (needsProject) {
+    <p class="muted" style="margin:0">Open a project you own to ask about its documents.</p>
+  } @else {
+    @if (turns().length === 0) {
+      <p class="muted" style="margin-top:0">
+        Answers come from uploaded documents, with a source for each passage.
+        If nothing relevant was retrieved, the assistant says it does not know.
+      </p>
+    }
+    @for (turn of turns(); track $index) {
+      <div style="margin-bottom:0.8rem">
+        <strong>{{ turn.role === 'USER' ? 'You' : 'Assistant' }}</strong>
+        <p style="white-space:pre-wrap; margin:0.25rem 0">{{ turn.content }}</p>
+        @if (turn.sources.length) {
+          <div class="row-actions" style="justify-content:flex-start; flex-wrap:wrap">
+            @for (source of turn.sources; track source.chunkId) {
+              <button class="btn btn-sm" type="button" (click)="openSource(source)">
+                {{ source.name }}{{ source.locator ? ' · ' + source.locator : '' }}
+              </button>
+            }
+          </div>
+        }
+      </div>
+    }
+    @if (error(); as err) {
+      <p class="error">{{ err }}</p>
+    }
+    <form class="toolbar" (ngSubmit)="send()">
+      <input [(ngModel)]="draft" name="draft" placeholder="Ask about the documents" [disabled]="sending()" />
+      <button class="btn btn-primary" type="submit" [disabled]="sending()">
+        {{ sending() ? 'Thinking…' : 'Ask' }}
+      </button>
+    </form>
+  }
+</section>

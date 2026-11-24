@@ -2,6 +2,7 @@ import { Component, DestroyRef, ElementRef, inject, signal, viewChild } from '@a
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
+import { ChatPanel } from '../chat/chat-panel';
 import { AuthService } from '../core/auth.service';
 import { AppDocument } from '../documents/document';
 import { DocumentService } from '../documents/document.service';
@@ -14,7 +15,7 @@ import { ProjectService } from './project.service';
 
 @Component({
   selector: 'app-project-detail',
-  imports: [RouterLink, ReactiveFormsModule],
+  imports: [RouterLink, ReactiveFormsModule, ChatPanel],
   templateUrl: './project-detail.html',
 })
 export class ProjectDetail {

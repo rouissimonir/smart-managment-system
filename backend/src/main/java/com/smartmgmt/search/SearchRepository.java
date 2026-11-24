@@ -66,13 +66,24 @@ public class SearchRepository {
     public List<SearchHit> semantic(float[] vector, String queryText, UUID projectId, UUID userId,
             boolean unrestricted, int limit, int offset) {
         String sql = SEMANTIC + visibility(projectId)
-                + " ORDER BY c.embedding <=> CAST(:vec AS vector), c.id LIMIT :limit OFFSET :offset";
+                + " ORDER BY 7 DESC, c.id LIMIT :limit OFFSET :offset";
         Query nativeQuery = entityManager.createNativeQuery(sql);
         nativeQuery.setParameter("vec", toVectorLiteral(vector));
         bindScope(nativeQuery, projectId, userId, unrestricted);
         nativeQuery.setParameter("limit", limit);
         nativeQuery.setParameter("offset", offset);
         return map(nativeQuery, queryText);
+    }
+
+    /** Same visibility and ordering as {@link #semantic}, but keeps the full chunk text for a prompt. */
+    public List<RetrievedChunk> nearest(float[] vector, UUID projectId, UUID userId, boolean unrestricted, int limit) {
+        String sql = SEMANTIC + visibility(projectId)
+                + " ORDER BY 7 DESC, c.id LIMIT :limit";
+        Query nativeQuery = entityManager.createNativeQuery(sql);
+        nativeQuery.setParameter("vec", toVectorLiteral(vector));
+        bindScope(nativeQuery, projectId, userId, unrestricted);
+        nativeQuery.setParameter("limit", limit);
+        return mapChunks(nativeQuery);
     }
 
     private static String visibility(UUID projectId) {
@@ -102,6 +113,23 @@ public class SearchRepository {
                     number(row[6])));
         }
         return hits;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<RetrievedChunk> mapChunks(Query query) {
+        List<Object[]> rows = query.getResultList();
+        List<RetrievedChunk> chunks = new ArrayList<>(rows.size());
+        for (Object[] row : rows) {
+            chunks.add(new RetrievedChunk(
+                    uuid(row[0]),
+                    uuid(row[1]),
+                    row[2] == null ? "" : row[2].toString(),
+                    uuid(row[3]),
+                    row[4] == null ? "" : row[4].toString(),
+                    row[5] == null ? null : row[5].toString(),
+                    number(row[6])));
+        }
+        return chunks;
     }
 
     static String toVectorLiteral(float[] vector) {

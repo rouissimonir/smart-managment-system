@@ -43,7 +43,7 @@ smart-managment-sytem/
 | Document upload (disk storage) | Done |
 | Extract → chunk → embeddings → pgvector (async) | Done |
 | Keyword + semantic search | Done (`GET /api/search`, keyword / semantic / hybrid) |
-| RAG chatbot + citations | Not started |
+| RAG chatbot + citations | Done (`POST /api/chat`, sources on every grounded answer) |
 | Database-aware chat (read-only tools) | Not started |
 | Redis, WebSocket, observability, eval, Docker deploy | Later |
 
@@ -173,6 +173,14 @@ clear it. The project form sends the selected owner explicitly.
 
 A `USER` only sees chunks on projects they own. A document with no project is visible to ADMIN and MANAGER. Passing `projectId` you cannot see returns 403. With no `OPENAI_API_KEY`, semantic order uses the offline hash vectors and the response sets `semanticMeaningful` to false; the search page says so. Keyword results do not depend on the key.
 
+## Assistant
+
+`POST /api/chat` embeds the question, retrieves the top 5 visible chunks, and asks the model to answer only from those excerpts. The reply is `{ answer, sources[] }` where each source has `documentId`, `name`, `locator`, and `chunkId`. If nothing is retrieved, or the model replies `I don't know.`, `sources` is empty.
+
+A `USER` must pass a `projectId` they own. ADMIN and MANAGER may ask globally. Conversations are private to the user who started them.
+
+With no `OPENAI_API_KEY` the assistant does not invent an answer: it returns the closest passage and the same citations. Set the key to use `gpt-4o-mini`.
+
 ## Run it
 
 ### 1. Database
@@ -246,6 +254,7 @@ trigger it.
 | Documents | `POST /api/documents` (multipart, `file` + optional `projectId`), `GET /api/documents/{id}`, `GET /api/documents/{id}/download`, `DELETE /api/documents/{id}`, `POST /api/documents/{id}/reprocess` (ADMIN/MANAGER), `GET /api/projects/{id}/documents` | — |
 | Users | `GET /api/users` (ADMIN/MANAGER) — id, email, full name, role. No password hash | — |
 | Search | `GET /api/search?q=&mode=KEYWORD\|SEMANTIC\|HYBRID&projectId=&page=&size=` | `projectId` |
+| Chat | `POST /api/chat` `{ conversationId?, projectId?, message }`, `GET /api/chat/conversations/{id}` | — |
 
 All endpoints except `/api/auth/**` and `/api/health` require a `Bearer` access token.
 List endpoints take `page`, `size` (max 100), `sort` (allowlisted per resource). Bodies
