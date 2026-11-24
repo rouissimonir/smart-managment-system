@@ -42,7 +42,7 @@ smart-managment-sytem/
 | Audit trail | **Next** |
 | Document upload (disk storage) | Done |
 | Extract → chunk → embeddings → pgvector (async) | Done |
-| Keyword + semantic search | Not started |
+| Keyword + semantic search | Done (`GET /api/search`, keyword / semantic / hybrid) |
 | RAG chatbot + citations | Not started |
 | Database-aware chat (read-only tools) | Not started |
 | Redis, WebSocket, observability, eval, Docker deploy | Later |
@@ -146,8 +146,9 @@ Locked choices, and what they cost:
   (the default), a deterministic offline `HashEmbeddingClient` produces unit vectors, so
   the pipeline and its tests run with no network. Those vectors carry no meaning —
   semantic search needs a real key (`OPENAI_API_KEY`).
-- **No ANN index yet.** The HNSW index arrives with the Phase 7 search query; indexing an
-  empty table only slows inserts.
+- **HNSW index.** `V7` adds a cosine HNSW index on `document_chunks.embedding` and a
+  GIN index on a generated English `tsvector`. Hybrid search fuses the two legs with
+  reciprocal rank fusion (k = 60) over a pool of 40 hits each.
 - **No OCR.** A scanned PDF yields no text and ends `FAILED` with that message.
 
 Chunks are internal: nothing returns their text yet. `GET /api/documents/{id}` exposes
@@ -161,6 +162,16 @@ same visibility rule as download.
 A project created without an `ownerId` is owned by the caller. An update that
 omits `ownerId` keeps the current owner, so an edit form cannot accidentally
 clear it. The project form sends the selected owner explicitly.
+
+## Search
+
+`GET /api/search` runs one of three modes:
+
+- `KEYWORD` — Postgres full-text search over chunk text and the document name (`english` config, so stemming applies). Ranked with `ts_rank_cd`.
+- `SEMANTIC` — the query is embedded with the same client as ingestion, then ordered by cosine distance (`<=>`) using the HNSW index.
+- `HYBRID` (default) — both legs, merged with reciprocal rank fusion.
+
+A `USER` only sees chunks on projects they own. A document with no project is visible to ADMIN and MANAGER. Passing `projectId` you cannot see returns 403. With no `OPENAI_API_KEY`, semantic order uses the offline hash vectors and the response sets `semanticMeaningful` to false; the search page says so. Keyword results do not depend on the key.
 
 ## Run it
 
@@ -234,6 +245,7 @@ trigger it.
 | Tasks | `GET/POST /api/tasks`, `GET/PUT/DELETE /api/tasks/{id}` | `q`, `status`, `projectId`, `assigneeId` |
 | Documents | `POST /api/documents` (multipart, `file` + optional `projectId`), `GET /api/documents/{id}`, `GET /api/documents/{id}/download`, `DELETE /api/documents/{id}`, `POST /api/documents/{id}/reprocess` (ADMIN/MANAGER), `GET /api/projects/{id}/documents` | — |
 | Users | `GET /api/users` (ADMIN/MANAGER) — id, email, full name, role. No password hash | — |
+| Search | `GET /api/search?q=&mode=KEYWORD\|SEMANTIC\|HYBRID&projectId=&page=&size=` | `projectId` |
 
 All endpoints except `/api/auth/**` and `/api/health` require a `Bearer` access token.
 List endpoints take `page`, `size` (max 100), `sort` (allowlisted per resource). Bodies

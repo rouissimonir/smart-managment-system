@@ -6,6 +6,7 @@
       </h1>
       <div class="row-actions">
         <a class="btn" routerLink="/projects">Back</a>
+        <a class="btn" [routerLink]="['/search']" [queryParams]="{ projectId: p.id }">Search</a>
         @if (auth.hasRole('ADMIN', 'MANAGER')) {
           <a class="btn" [routerLink]="['/projects', p.id, 'edit']">Edit</a>
           <button class="btn btn-danger" (click)="deleteProject()">Delete</button>
