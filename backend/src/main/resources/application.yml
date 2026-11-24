@@ -72,6 +72,10 @@ app:
       api-key: ${OPENAI_API_KEY:}
       model: text-embedding-3-small
 
+  demo:
+    # Off unless the local profile or DEMO_SEED=true. Tests stay deterministic.
+    seed: ${DEMO_SEED:false}
+
   chat:
     top-k: 5
     openai:

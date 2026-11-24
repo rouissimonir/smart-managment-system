@@ -1,0 +1,4 @@
+# Dev profile used by ./mvnw spring-boot:run. The dev JWT secret is allowed here.
+app:
+  demo:
+    seed: true

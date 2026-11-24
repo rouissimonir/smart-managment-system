@@ -17,5 +17,30 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    profiles: ["demo"]
+    build: ./backend
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://db:5432/smartmgmt
+      DB_USERNAME: smartmgmt
+      DB_PASSWORD: smartmgmt
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to 32+ bytes}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEMO_SEED: ${DEMO_SEED:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  frontend:
+    profiles: ["demo"]
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "8088:80"
+
 volumes:
   db-data:

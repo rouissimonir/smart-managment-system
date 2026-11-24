@@ -78,7 +78,8 @@ smart-managment-sytem/
 | RAG chatbot + citations | Done (`POST /api/chat`, sources on every grounded answer) |
 | Database-aware chat (read-only tools) | Done (intent router + overdue / project / task / customer tools) |
 | Retrieval eval | Done (`eval/dataset.jsonl`, `eval/score.py`) |
-| Redis, WebSocket, observability, Docker deploy | Later |
+| Docker Compose demo + GitHub Actions | Done (not deployed to a public host) |
+| Redis, WebSocket, observability | Later |
 
 ## Auth & RBAC
 
@@ -232,6 +233,27 @@ The tools are fixed methods, not generated SQL: overdue project count, project b
 ```bash
 docker compose up -d db
 ```
+
+`docker compose up -d db` starts only Postgres. The `demo` profile (below) is what
+builds the API and the Angular image.
+
+### Demo stack
+
+```bash
+export JWT_SECRET="$(openssl rand -base64 32)"
+docker compose --profile demo up --build
+```
+
+The UI is http://localhost:8088 and the API is http://localhost:8080. The prod
+profile refuses to start when `JWT_SECRET` is still the dev default committed in
+`application.yml`. `OPENAI_API_KEY` is optional. Sample customers, projects, and
+the two policy files load when `DEMO_SEED` is true (the demo profile default).
+`./mvnw spring-boot:run` uses the `local` profile, which also seeds and still
+allows the dev JWT secret. Tests do not.
+
+This repository does not deploy that stack to a public host. CI (`.github/workflows/ci.yml`)
+runs the backend Testcontainers suite, the Angular test and production build, and
+`python3 eval/score.py --self-test`.
 
 Postgres listens on **host port 5433** (5432 is often taken by a native install).
 Credentials: `smartmgmt` / `smartmgmt`, database `smartmgmt`.

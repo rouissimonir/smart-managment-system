@@ -56,6 +56,18 @@ public class DocumentStorageService {
         return relativePath;
     }
 
+    /** Same path rules as {@link #store}, for files that did not arrive as an HTTP upload. */
+    public String storeBytes(byte[] bytes, String extension) {
+        String relativePath = UUID.randomUUID() + (extension == null || extension.isEmpty() ? "" : "." + extension);
+        Path target = resolveInsideRoot(relativePath);
+        try {
+            Files.write(target, bytes);
+        } catch (IOException e) {
+            throw new DocumentStorageException("Failed to store file bytes", e);
+        }
+        return relativePath;
+    }
+
     public Resource load(String relativePath) {
         try {
             Path file = resolveInsideRoot(relativePath);

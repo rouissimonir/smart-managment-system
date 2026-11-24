@@ -2,6 +2,7 @@ package com.smartmgmt.management.customer;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
@@ -12,4 +13,6 @@ public interface CustomerRepository
         extends JpaRepository<Customer, UUID>, JpaSpecificationExecutor<Customer> {
 
     List<Customer> findByUpdatedAtBeforeOrderByNameAsc(Instant updatedAt, Pageable pageable);
+
+    Optional<Customer> findFirstByNameIgnoreCase(String name);
 }
