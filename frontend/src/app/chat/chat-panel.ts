@@ -1,7 +1,6 @@
 import { Component, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { AuthService } from '../core/auth.service';
 import { DocumentService } from '../documents/document.service';
 import { AppDocument } from '../documents/document';
 import { ChatSource, ChatTurn } from './chat';
@@ -17,7 +16,6 @@ export class ChatPanel {
 
   private readonly chat = inject(ChatService);
   private readonly documents = inject(DocumentService);
-  protected readonly auth = inject(AuthService);
 
   protected draft = '';
   protected readonly turns = signal<ChatTurn[]>([]);
@@ -25,13 +23,9 @@ export class ChatPanel {
   protected readonly error = signal<string | null>(null);
   private conversationId: string | null = null;
 
-  protected get needsProject(): boolean {
-    return !this.projectId() && this.auth.hasRole('USER');
-  }
-
   send(): void {
     const message = this.draft.trim();
-    if (!message || this.sending() || this.needsProject) {
+    if (!message || this.sending()) {
       return;
     }
     this.draft = '';

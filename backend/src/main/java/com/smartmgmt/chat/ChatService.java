@@ -44,11 +44,13 @@ public class ChatService {
     private final ChatClient chatClient;
     private final ChatProperties properties;
     private final ObjectMapper objectMapper;
+    private final IntentRouter router;
+    private final DataTools dataTools;
 
     public ChatService(ChatConversationRepository conversations, ChatMessageRepository messages,
             UserRepository users, ProjectRepository projects, SearchRepository search,
             EmbeddingClient embeddings, ChatClient chatClient, ChatProperties properties,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper, IntentRouter router, DataTools dataTools) {
         this.conversations = conversations;
         this.messages = messages;
         this.users = users;
@@ -58,38 +60,82 @@ public class ChatService {
         this.chatClient = chatClient;
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.router = router;
+        this.dataTools = dataTools;
     }
 
     public ChatReply ask(ChatRequest request) {
         UserPrincipal current = SecurityUtils.currentUser();
         String question = request.message().trim();
+        Intent intent = router.route(question);
         ChatConversation conversation = resolveConversation(request, current);
         Project project = conversation.getProject();
         UUID projectId = project == null ? null : project.getId();
 
-        List<RetrievedChunk> chunks = List.of();
-        if (properties.getTopK() > 0) {
-            float[] vector = embeddings.embed(List.of(question)).get(0);
-            chunks = search.nearest(vector, projectId, current.getId(), current.getRole() != Role.USER,
-                    properties.getTopK());
-        }
-
-        String answer;
-        List<ChatSource> sources;
-        if (chunks.isEmpty()) {
-            answer = Grounding.UNKNOWN;
-            sources = List.of();
-        } else if (chatClient.generative()) {
-            answer = chatClient.complete(Grounding.systemPrompt(), Grounding.userPrompt(question, chunks)).trim();
-            sources = Grounding.sourcesFor(answer, chunks);
-        } else {
-            answer = Grounding.extractive(chunks.get(0));
-            sources = chunks.stream().map(ChatSource::from).toList();
+        String answer = Grounding.UNKNOWN;
+        List<ChatSource> sources = List.of();
+        String model = chatClient.modelId();
+        switch (intent) {
+            case GENERAL -> {
+                answer = """
+                        I can look up projects, tasks, and customers you are allowed to see, \
+                        and answer from uploaded documents with citations. \
+                        Try "Who owns Project Alpha?" or "What is the refund policy?\"""";
+                sources = List.of();
+                model = "help";
+            }
+            case SQL_DATA -> {
+                answer = dataTools.answer(question, current);
+                sources = List.of();
+                model = "tools";
+            }
+            case HYBRID -> {
+                String toolText = dataTools.answer(question, current);
+                List<RetrievedChunk> chunks = retrieve(question, projectId, current);
+                if (chunks.isEmpty()) {
+                    answer = toolText;
+                    sources = List.of();
+                } else if (chatClient.generative()) {
+                    String prompt = "Application data:\n" + toolText + "\n\n" + Grounding.userPrompt(question, chunks);
+                    answer = chatClient.complete(Grounding.systemPrompt(), prompt).trim();
+                    sources = Grounding.sourcesFor(answer, chunks);
+                    if (Grounding.isUnknown(answer)) {
+                        answer = toolText;
+                        sources = List.of();
+                    }
+                } else {
+                    answer = toolText + "\n\n" + Grounding.extractive(chunks.get(0));
+                    sources = chunks.stream().map(ChatSource::from).toList();
+                }
+                model = chatClient.generative() ? chatClient.modelId() : "tools";
+            }
+            case VECTOR_RAG -> {
+                List<RetrievedChunk> chunks = retrieve(question, projectId, current);
+                if (chunks.isEmpty()) {
+                    answer = Grounding.UNKNOWN;
+                    sources = List.of();
+                } else if (chatClient.generative()) {
+                    answer = chatClient.complete(Grounding.systemPrompt(), Grounding.userPrompt(question, chunks)).trim();
+                    sources = Grounding.sourcesFor(answer, chunks);
+                } else {
+                    answer = Grounding.extractive(chunks.get(0));
+                    sources = chunks.stream().map(ChatSource::from).toList();
+                }
+                model = chatClient.modelId();
+            }
         }
 
         save(conversation, ChatRole.USER, question, null);
         save(conversation, ChatRole.ASSISTANT, answer, sources);
-        return new ChatReply(conversation.getId(), answer, sources, chatClient.modelId());
+        return new ChatReply(conversation.getId(), answer, sources, model);
+    }
+
+    private List<RetrievedChunk> retrieve(String question, UUID projectId, UserPrincipal current) {
+        if (properties.getTopK() <= 0) {
+            return List.of();
+        }
+        float[] vector = embeddings.embed(List.of(question)).get(0);
+        return search.nearest(vector, projectId, current.getId(), current.getRole() != Role.USER, properties.getTopK());
     }
 
     @Transactional(readOnly = true)
@@ -126,8 +172,6 @@ public class ChatService {
             project = projects.findById(request.projectId())
                     .orElseThrow(() -> new NotFoundException("Project", request.projectId()));
             requireVisible(project, current);
-        } else if (current.getRole() == Role.USER) {
-            throw new AccessDeniedException("A project is required");
         }
         ChatConversation created = new ChatConversation();
         created.setUser(users.findById(current.getId())

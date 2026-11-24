@@ -1,11 +1,8 @@
 <section class="card">
-  @if (needsProject) {
-    <p class="muted" style="margin:0">Open a project you own to ask about its documents.</p>
-  } @else {
     @if (turns().length === 0) {
       <p class="muted" style="margin-top:0">
-        Answers come from uploaded documents, with a source for each passage.
-        If nothing relevant was retrieved, the assistant says it does not know.
+        Ask about a project you can see, or about an uploaded document.
+        Document answers include a source. If nothing relevant was found, the assistant says it does not know.
       </p>
     }
     @for (turn of turns(); track $index) {
@@ -32,5 +29,4 @@
         {{ sending() ? 'Thinking…' : 'Ask' }}
       </button>
     </form>
-  }
 </section>

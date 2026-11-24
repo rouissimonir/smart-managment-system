@@ -44,7 +44,7 @@ smart-managment-sytem/
 | Extract → chunk → embeddings → pgvector (async) | Done |
 | Keyword + semantic search | Done (`GET /api/search`, keyword / semantic / hybrid) |
 | RAG chatbot + citations | Done (`POST /api/chat`, sources on every grounded answer) |
-| Database-aware chat (read-only tools) | Not started |
+| Database-aware chat (read-only tools) | Done (intent router + overdue / project / task / customer tools) |
 | Redis, WebSocket, observability, eval, Docker deploy | Later |
 
 ## Auth & RBAC
@@ -180,6 +180,17 @@ A `USER` only sees chunks on projects they own. A document with no project is vi
 A `USER` must pass a `projectId` they own. ADMIN and MANAGER may ask globally. Conversations are private to the user who started them.
 
 With no `OPENAI_API_KEY` the assistant does not invent an answer: it returns the closest passage and the same citations. Set the key to use `gpt-4o-mini`.
+
+Questions are routed before any retrieval:
+
+| Intent | Example | What runs |
+|---|---|---|
+| `SQL_DATA` | Who owns Project Alpha? | Read-only tools against Postgres. No embedding call. |
+| `VECTOR_RAG` | What is the refund policy? | Top-k chunks and citations. |
+| `HYBRID` | Compare the refund policy with Project Alpha | Tools and chunks. |
+| `GENERAL` | What can you do? | A short help reply. No database and no documents. |
+
+The tools are fixed methods, not generated SQL: overdue project count, project by name (owner, status, due date), tasks on a project, customers not updated since a date. A `USER` only gets projects they own and tasks assigned to them. A project they cannot see is reported as not found.
 
 ## Run it
 
