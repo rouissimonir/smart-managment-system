@@ -1,0 +1,7 @@
+{"id": "refund-window", "question": "How long do customers have to request a refund?", "expected_source": "Refund Policy.md", "gold_phrase": "30 days"}
+{"id": "refund-payment", "question": "How are refunds paid back?", "expected_source": "Refund Policy.md", "gold_phrase": "original payment method"}
+{"id": "refund-digital", "question": "Are digital services refundable after the window?", "expected_source": "Refund Policy.md", "gold_phrase": "not refundable"}
+{"id": "termination-body", "question": "When does subscription termination take effect?", "expected_source": "Account Closure Terms.md", "gold_phrase": "end of the current billing period"}
+{"id": "closure-files", "question": "How long after termination are stored files deleted?", "expected_source": "Account Closure Terms.md", "gold_phrase": "14 days"}
+{"id": "cancellation-semantic", "question": "What is the customer cancellation policy?", "expected_source": "Account Closure Terms.md", "gold_phrase": "subscription termination"}
+{"id": "unanswerable", "question": "What is the office wifi password?", "expected_source": null, "expect_unknown": true}

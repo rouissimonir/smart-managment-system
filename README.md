@@ -3,9 +3,41 @@
 Enterprise project & knowledge platform: Angular + Spring Boot + PostgreSQL/pgvector,
 with a RAG assistant that answers from **app data and documents** (not a generic chatbot).
 
-**Today this repo has the management CRUD foundation, JWT auth/RBAC, and document
-upload.** Audit trail and RAG are planned, not implemented. Full roadmap:
-[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+The assistant answers from **this application's data and documents**. A question about
+who owns a project is a read-only tool call. A question about a policy is retrieval
+with citations. It does not get a SQL string, and it is told to say "I don't know"
+when the excerpts do not contain the answer.
+
+Full roadmap: [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+
+## Architecture
+
+One Spring Boot JAR. Modules are packages, not services.
+
+```text
+Angular
+  │  JWT
+  ▼
+Spring Boot
+  ├── management   customers, projects, tasks
+  ├── documents    upload, extract, chunk, embed
+  ├── search       keyword (FTS) + semantic (pgvector) + RRF
+  └── chat         intent router → tools and/or RAG → citations
+         │
+         ▼
+PostgreSQL 16 + pgvector          local disk (uploads/)
+```
+
+```text
+question
+   │
+   ▼
+intent router (rules, not a model call)
+   ├── GENERAL     short help, no data
+   ├── SQL_DATA    fixed tools, caller's role applied inside the tool
+   ├── VECTOR_RAG  embed → top-k chunks the caller may see → answer + sources
+   └── HYBRID      tools and chunks, then one answer
+```
 
 ## Stack
 
@@ -28,8 +60,8 @@ smart-managment-sytem/
   docker-compose.yml      # Postgres + pgvector
   backend/                # Spring Boot API
   frontend/               # Angular app
-  observability/          # Prometheus / Grafana (later)
-  eval/                   # RAG eval dataset + runner (later)
+  observability/          # Prometheus / Grafana (not wired)
+  eval/                   # retrieval dataset + hit-rate script
 ```
 
 ## Current status
@@ -42,10 +74,12 @@ smart-managment-sytem/
 | Audit trail | **Next** |
 | Document upload (disk storage) | Done |
 | Extract → chunk → embeddings → pgvector (async) | Done |
-| Keyword + semantic search | Not started |
-| RAG chatbot + citations | Not started |
-| Database-aware chat (read-only tools) | Not started |
-| Redis, WebSocket, observability, eval, Docker deploy | Later |
+| Keyword + semantic search | Done (`GET /api/search`, keyword / semantic / hybrid) |
+| RAG chatbot + citations | Done (`POST /api/chat`, sources on every grounded answer) |
+| Database-aware chat (read-only tools) | Done (intent router + overdue / project / task / customer tools) |
+| Retrieval eval | Done (`eval/dataset.jsonl`, `eval/score.py`) |
+| Docker Compose demo + GitHub Actions | Done (not deployed to a public host) |
+| Redis, WebSocket, observability | Later |
 
 ## Auth & RBAC
 
@@ -63,6 +97,10 @@ stateless-session URL rule (`anyRequest().authenticated()`):
 | ADMIN | full CRUD | full CRUD | full CRUD |
 | MANAGER | full CRUD | full CRUD | full CRUD |
 | USER | read only | read/list **own projects only** | read/list **assigned tasks only**; can update status/description/title/due date on a task assigned to them (cannot reassign, unassign, or move it) |
+
+`GET /api/users` is ADMIN/MANAGER only. The project form and the task form use it
+for the owner and assignee dropdowns. A new project defaults the owner to the
+signed-in manager.
 
 Seed accounts (BCrypt-hashed, Flyway `V4__seed_users.sql`) for local dev/demo:
 
@@ -142,14 +180,51 @@ Locked choices, and what they cost:
   (the default), a deterministic offline `HashEmbeddingClient` produces unit vectors, so
   the pipeline and its tests run with no network. Those vectors carry no meaning —
   semantic search needs a real key (`OPENAI_API_KEY`).
-- **No ANN index yet.** The HNSW index arrives with the Phase 7 search query; indexing an
-  empty table only slows inserts.
+- **HNSW index.** `V7` adds a cosine HNSW index on `document_chunks.embedding` and a
+  GIN index on a generated English `tsvector`. Hybrid search fuses the two legs with
+  reciprocal rank fusion (k = 60) over a pool of 40 hits each.
 - **No OCR.** A scanned PDF yields no text and ends `FAILED` with that message.
 
 Chunks are internal: nothing returns their text yet. `GET /api/documents/{id}` exposes
 `status`, `chunkCount`, `embeddingModel`, `errorMessage` and `processedAt`.
 
-Deleting a document deletes its chunks (`ON DELETE CASCADE`).
+Deleting a document deletes its chunks (`ON DELETE CASCADE`) and, after that
+transaction commits, the file on disk. Deleting a project does the same for
+every document that belonged to it. `DELETE /api/documents/{id}` follows the
+same visibility rule as download.
+
+A project created without an `ownerId` is owned by the caller. An update that
+omits `ownerId` keeps the current owner, so an edit form cannot accidentally
+clear it. The project form sends the selected owner explicitly.
+
+## Search
+
+`GET /api/search` runs one of three modes:
+
+- `KEYWORD` — Postgres full-text search over chunk text and the document name (`english` config, so stemming applies). Ranked with `ts_rank_cd`.
+- `SEMANTIC` — the query is embedded with the same client as ingestion, then ordered by cosine distance (`<=>`) using the HNSW index.
+- `HYBRID` (default) — both legs, merged with reciprocal rank fusion.
+
+A `USER` only sees chunks on projects they own. A document with no project is visible to ADMIN and MANAGER. Passing `projectId` you cannot see returns 403. With no `OPENAI_API_KEY`, semantic order uses the offline hash vectors and the response sets `semanticMeaningful` to false; the search page says so. Keyword results do not depend on the key.
+
+## Assistant
+
+`POST /api/chat` embeds the question, retrieves the top 5 visible chunks, and asks the model to answer only from those excerpts. The reply is `{ answer, sources[] }` where each source has `documentId`, `name`, `locator`, and `chunkId`. If nothing is retrieved, or the model replies `I don't know.`, `sources` is empty.
+
+A `USER` must pass a `projectId` they own. ADMIN and MANAGER may ask globally. Conversations are private to the user who started them.
+
+With no `OPENAI_API_KEY` the assistant does not invent an answer: it returns the closest passage and the same citations. Set the key to use `gpt-4o-mini`.
+
+Questions are routed before any retrieval:
+
+| Intent | Example | What runs |
+|---|---|---|
+| `SQL_DATA` | Who owns Project Alpha? | Read-only tools against Postgres. No embedding call. |
+| `VECTOR_RAG` | What is the refund policy? | Top-k chunks and citations. |
+| `HYBRID` | Compare the refund policy with Project Alpha | Tools and chunks. |
+| `GENERAL` | What can you do? | A short help reply. No database and no documents. |
+
+The tools are fixed methods, not generated SQL: overdue project count, project by name (owner, status, due date), tasks on a project, customers not updated since a date. A `USER` only gets projects they own and tasks assigned to them. A project they cannot see is reported as not found.
 
 ## Run it
 
@@ -158,6 +233,27 @@ Deleting a document deletes its chunks (`ON DELETE CASCADE`).
 ```bash
 docker compose up -d db
 ```
+
+`docker compose up -d db` starts only Postgres. The `demo` profile (below) is what
+builds the API and the Angular image.
+
+### Demo stack
+
+```bash
+export JWT_SECRET="$(openssl rand -base64 32)"
+docker compose --profile demo up --build
+```
+
+The UI is http://localhost:8088 and the API is http://localhost:8080. The prod
+profile refuses to start when `JWT_SECRET` is still the dev default committed in
+`application.yml`. `OPENAI_API_KEY` is optional. Sample customers, projects, and
+the two policy files load when `DEMO_SEED` is true (the demo profile default).
+`./mvnw spring-boot:run` uses the `local` profile, which also seeds and still
+allows the dev JWT secret. Tests do not.
+
+This repository does not deploy that stack to a public host. CI (`.github/workflows/ci.yml`)
+runs the backend Testcontainers suite, the Angular test and production build, and
+`python3 eval/score.py --self-test`.
 
 Postgres listens on **host port 5433** (5432 is often taken by a native install).
 Credentials: `smartmgmt` / `smartmgmt`, database `smartmgmt`.
@@ -205,7 +301,10 @@ from `POST /api/projects`, MANAGER allowed, expired token rejected, bad sort fie
 rejected). `DocumentControllerTest` covers upload → get → download → list-by-project
 and rejects an unsupported file type; `DocumentRbacTest` covers USER upload restricted
 to an owned project (and blocked for a project-less upload) plus the anonymous-401 case,
-and that reprocessing is ADMIN/MANAGER-only. `ChunkerTest` pins the window arithmetic
+and that reprocessing is ADMIN/MANAGER-only. `SearchRankingTest` covers reciprocal rank
+fusion and snippets. `GroundingTest` checks that "I don't know." drops citations.
+`IntentRouterTest` and `ChatRoutingTest` check that "Who owns Project Alpha?" stays on
+the tool path and "What is the refund policy?" calls retrieval instead. `ChunkerTest` pins the window arithmetic
 (contiguous indices, real overlap, page labels, full coverage); `DocumentIngestionTest`
 runs the pipeline end to end against Postgres — READY with 1536-dim vectors, page labels
 from a generated two-page PDF, a corrupt file ending FAILED with a message, reprocess
@@ -221,7 +320,10 @@ trigger it.
 | Customers | `GET/POST /api/customers`, `GET/PUT/DELETE /api/customers/{id}` | `q` |
 | Projects | `GET/POST /api/projects`, `GET/PUT/DELETE /api/projects/{id}` | `q`, `status`, `customerId`, `ownerId`, `overdue` |
 | Tasks | `GET/POST /api/tasks`, `GET/PUT/DELETE /api/tasks/{id}` | `q`, `status`, `projectId`, `assigneeId` |
-| Documents | `POST /api/documents` (multipart, `file` + optional `projectId`), `GET /api/documents/{id}`, `GET /api/documents/{id}/download`, `POST /api/documents/{id}/reprocess` (ADMIN/MANAGER), `GET /api/projects/{id}/documents` | — |
+| Documents | `POST /api/documents` (multipart, `file` + optional `projectId`), `GET /api/documents/{id}`, `GET /api/documents/{id}/download`, `DELETE /api/documents/{id}`, `POST /api/documents/{id}/reprocess` (ADMIN/MANAGER), `GET /api/projects/{id}/documents` | — |
+| Users | `GET /api/users` (ADMIN/MANAGER) — id, email, full name, role. No password hash | — |
+| Search | `GET /api/search?q=&mode=KEYWORD\|SEMANTIC\|HYBRID&projectId=&page=&size=` | `projectId` |
+| Chat | `POST /api/chat` `{ conversationId?, projectId?, message }`, `GET /api/chat/conversations/{id}` | — |
 
 All endpoints except `/api/auth/**` and `/api/health` require a `Bearer` access token.
 List endpoints take `page`, `size` (max 100), `sort` (allowlisted per resource). Bodies
@@ -229,8 +331,29 @@ use DTOs; lists return a `PageResponse` envelope. Validation errors are RFC 9457
 `ProblemDetail` (400 + `errors`); unknown ids return 404; RBAC/ownership denials return
 403; missing/invalid/expired tokens return 401.
 
-README sections for the audit trail, RAG + citations, SQL-tool safety, and eval will be
-added when those phases land.
+## Evaluation
+
+`eval/dataset.jsonl` holds retrieval questions. Each scored row names the file that
+should appear in the top results. `eval/score.py` logs in, calls `GET /api/search`,
+and prints hit-rate. Rows with `expected_source: null` are listed and not scored.
+
+```bash
+python3 eval/score.py --self-test
+python3 eval/score.py --base http://localhost:8080 --email manager@local --password manager123 --mode HYBRID --k 5
+```
+
+The two policy files the questions refer to ship in `backend/src/main/resources/demo/`.
+They have to be uploaded (or loaded by the demo seeder) and finish ingestion before a
+live score means anything. Keyword mode can hit "Refund Policy.md" because the body
+says "refund" and "30 days". "What is the customer cancellation policy?" should miss
+on keyword search: the file is named "Account Closure Terms.md" and the body says
+"subscription termination". That question is the semantic check, and it needs
+`OPENAI_API_KEY` plus a reprocess so the stored vectors are not the offline hash.
+
+Change one knob (chunk size in `application.yml`, or `--k`), run the script again,
+and record both rates. This README does not invent a before/after number.
+
+`eval/score.py --self-test` checks the scorer itself and does not need the API.
 
 ## Known gaps
 

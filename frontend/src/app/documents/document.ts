@@ -12,6 +12,10 @@ export interface AppDocument {
   projectName: string | null;
   uploadedById: string | null;
   uploadedByName: string | null;
+  chunkCount: number;
+  embeddingModel: string | null;
+  errorMessage: string | null;
+  processedAt: string | null;
   createdAt: string;
 }
 

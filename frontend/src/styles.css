@@ -85,7 +85,7 @@ tr:last-child td { border-bottom: none; }
   font: inherit;
   background: var(--surface);
 }
-.field .error { color: var(--danger); font-size: 0.8rem; }
+.error, .field .error { color: var(--danger); font-size: 0.8rem; }
 
 .card {
   background: var(--surface);

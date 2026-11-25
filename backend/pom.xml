@@ -183,6 +183,12 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<!-- ./mvnw spring-boot:run loads demo projects and the dev JWT secret. Tests do not. -->
+					<profiles>
+						<profile>local</profile>
+					</profiles>
+				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

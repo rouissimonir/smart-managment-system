@@ -11,6 +11,15 @@ uploads/
 .vscode/
 *.iml
 
+# JVM crash dumps and accidental source archives
+hs_err_pid*.log
+replay_pid*.log
+*.tgz
+
+# Python
+__pycache__/
+*.pyc
+
 # Build output (module .gitignore files cover the rest)
 backend/target/
 frontend/dist/

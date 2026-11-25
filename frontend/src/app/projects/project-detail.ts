@@ -1,18 +1,21 @@
-import { Component, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
+import { ChatPanel } from '../chat/chat-panel';
 import { AuthService } from '../core/auth.service';
 import { AppDocument } from '../documents/document';
 import { DocumentService } from '../documents/document.service';
 import { TASK_STATUSES, Task } from '../tasks/task';
 import { TaskService } from '../tasks/task.service';
+import { UserSummary } from '../users/user';
+import { UserService } from '../users/user.service';
 import { Project } from './project';
 import { ProjectService } from './project.service';
 
 @Component({
   selector: 'app-project-detail',
-  imports: [RouterLink, ReactiveFormsModule],
+  imports: [RouterLink, ReactiveFormsModule, ChatPanel],
   templateUrl: './project-detail.html',
 })
 export class ProjectDetail {
@@ -20,8 +23,10 @@ export class ProjectDetail {
   private readonly projectService = inject(ProjectService);
   private readonly taskService = inject(TaskService);
   private readonly documentService = inject(DocumentService);
+  private readonly userService = inject(UserService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly auth = inject(AuthService);
 
   private readonly id = this.route.snapshot.paramMap.get('id')!;
@@ -31,19 +36,26 @@ export class ProjectDetail {
   protected readonly project = signal<Project | null>(null);
   protected readonly tasks = signal<Task[]>([]);
   protected readonly documents = signal<AppDocument[]>([]);
+  protected readonly users = signal<UserSummary[]>([]);
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
 
   protected readonly taskForm = this.fb.nonNullable.group({
     title: ['', [Validators.required, Validators.maxLength(200)]],
     status: ['TODO' as (typeof TASK_STATUSES)[number]],
+    assigneeId: [''],
     dueDate: [''],
   });
 
   constructor() {
+    this.destroyRef.onDestroy(() => this.stopPolling());
     this.projectService.get(this.id).subscribe((p) => this.project.set(p));
     this.loadTasks();
     this.loadDocuments();
+    if (this.auth.hasRole('ADMIN', 'MANAGER')) {
+      this.userService.list().subscribe((users) => this.users.set(users));
+    }
   }
 
   loadTasks(): void {
@@ -51,7 +63,22 @@ export class ProjectDetail {
   }
 
   loadDocuments(): void {
-    this.documentService.listForProject(this.id).subscribe((docs) => this.documents.set(docs));
+    this.documentService.listForProject(this.id).subscribe((docs) => {
+      this.documents.set(docs);
+      const pending = docs.some((d) => d.status === 'UPLOADED' || d.status === 'PROCESSING');
+      if (pending && this.pollTimer === null) {
+        this.pollTimer = setInterval(() => this.loadDocuments(), 2000);
+      } else if (!pending) {
+        this.stopPolling();
+      }
+    });
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer !== null) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
   }
 
   /** ADMIN/MANAGER can edit any task; a USER can only advance a task assigned to them. */
@@ -72,9 +99,15 @@ export class ProjectDetail {
     }
     const v = this.taskForm.getRawValue();
     this.taskService
-      .create({ title: v.title, status: v.status, dueDate: v.dueDate || null, projectId: this.id })
+      .create({
+        title: v.title,
+        status: v.status,
+        assigneeId: v.assigneeId || null,
+        dueDate: v.dueDate || null,
+        projectId: this.id,
+      })
       .subscribe(() => {
-        this.taskForm.reset({ title: '', status: 'TODO', dueDate: '' });
+        this.taskForm.reset({ title: '', status: 'TODO', assigneeId: '', dueDate: '' });
         this.loadTasks();
       });
   }
@@ -114,6 +147,15 @@ export class ProjectDetail {
 
   downloadDocument(doc: AppDocument): void {
     this.documentService.download(doc);
+  }
+
+  reprocessDocument(doc: AppDocument): void {
+    this.documentService.reprocess(doc.id).subscribe(() => this.loadDocuments());
+  }
+
+  removeDocument(doc: AppDocument): void {
+    if (!confirm(`Delete document "${doc.name}"?`)) return;
+    this.documentService.remove(doc.id).subscribe(() => this.loadDocuments());
   }
 
   formatSize(bytes: number): string {

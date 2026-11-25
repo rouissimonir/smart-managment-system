@@ -2,8 +2,11 @@ import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
+import { AuthService } from '../core/auth.service';
 import { Customer } from '../customers/customer';
 import { CustomerService } from '../customers/customer.service';
+import { UserSummary } from '../users/user';
+import { UserService } from '../users/user.service';
 import { PROJECT_STATUSES } from './project';
 import { ProjectService } from './project.service';
 
@@ -16,6 +19,8 @@ export class ProjectForm {
   private readonly fb = inject(FormBuilder);
   private readonly service = inject(ProjectService);
   private readonly customerService = inject(CustomerService);
+  private readonly userService = inject(UserService);
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -23,6 +28,7 @@ export class ProjectForm {
   protected readonly isEdit = this.id !== null && this.id !== 'new';
   protected readonly statuses = PROJECT_STATUSES;
   protected readonly customers = signal<Customer[]>([]);
+  protected readonly users = signal<UserSummary[]>([]);
   protected readonly error = signal<string | null>(null);
 
   protected readonly form = this.fb.nonNullable.group({
@@ -30,12 +36,14 @@ export class ProjectForm {
     description: [''],
     status: ['PLANNING' as (typeof PROJECT_STATUSES)[number]],
     customerId: [''],
+    ownerId: [this.auth.user()?.id ?? ''],
     startDate: [''],
     dueDate: [''],
   });
 
   constructor() {
     this.customerService.list({ size: 100 }).subscribe((p) => this.customers.set(p.content));
+    this.userService.list().subscribe((users) => this.users.set(users));
     if (this.isEdit) {
       this.service.get(this.id!).subscribe((p) =>
         this.form.patchValue({
@@ -43,6 +51,7 @@ export class ProjectForm {
           description: p.description ?? '',
           status: p.status,
           customerId: p.customerId ?? '',
+          ownerId: p.ownerId ?? '',
           startDate: p.startDate ?? '',
           dueDate: p.dueDate ?? '',
         }),
@@ -61,6 +70,7 @@ export class ProjectForm {
       description: v.description || null,
       status: v.status,
       customerId: v.customerId || null,
+      ownerId: v.ownerId || null,
       startDate: v.startDate || null,
       dueDate: v.dueDate || null,
     };

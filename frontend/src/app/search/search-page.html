@@ -1,0 +1,57 @@
+<div class="container">
+  <div class="page-header">
+    <h1>Search</h1>
+  </div>
+
+  <form class="toolbar" (ngSubmit)="run()">
+    <input [(ngModel)]="q" name="q" placeholder="Search documents" />
+    <select [(ngModel)]="mode" name="mode">
+      @for (m of modes; track m) { <option [value]="m">{{ m }}</option> }
+    </select>
+    <button class="btn btn-primary" type="submit">Search</button>
+  </form>
+
+  @if (projectId) {
+    <p class="muted">Limited to this project. <a routerLink="/search">Search everything you can see</a></p>
+  }
+
+  @if (error(); as err) {
+    <p class="error">{{ err }}</p>
+  }
+
+  @if (loading()) {
+    <p class="muted">Searching…</p>
+  } @else if (result(); as res) {
+    @if (!res.semanticMeaningful && res.mode !== 'KEYWORD') {
+      <p class="muted">
+        Semantic ranking is using offline hash vectors, so similarity is not meaningful.
+        Keyword matches still are. Set <code>OPENAI_API_KEY</code> for real embeddings.
+      </p>
+    }
+
+    @if (res.hits.length === 0) {
+      <div class="card empty">No matches.</div>
+    } @else {
+      @for (hit of res.hits; track hit.chunkId) {
+        <article class="card" style="margin-bottom:0.75rem">
+          <div class="page-header" style="margin-bottom:0.4rem">
+            <strong>{{ hit.documentName }}</strong>
+            <span class="muted">{{ hit.locator || 'no locator' }}</span>
+          </div>
+          <p style="margin:0.2rem 0 0.6rem">{{ hit.snippet }}</p>
+          <div class="row-actions">
+            @if (hit.projectId) {
+              <a class="btn btn-sm" [routerLink]="['/projects', hit.projectId]">Project</a>
+            }
+            <button class="btn btn-sm" (click)="download(hit)">Download</button>
+          </div>
+        </article>
+      }
+      <div class="toolbar">
+        <button class="btn" type="button" (click)="previous()" [disabled]="page === 0">Previous</button>
+        <span class="muted">Page {{ page + 1 }}</span>
+        <button class="btn" type="button" (click)="next()" [disabled]="res.hits.length < res.size">Next</button>
+      </div>
+    }
+  }
+</div>

@@ -22,6 +22,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     @EntityGraph(attributePaths = {"uploadedBy", "project"})
     List<Document> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
 
+    boolean existsByName(String name);
+
     /**
      * Claims a document for ingestion. The {@code status in :from} clause is the
      * whole concurrency control: when a double submit, a retry and the startup

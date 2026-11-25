@@ -72,6 +72,17 @@ app:
       api-key: ${OPENAI_API_KEY:}
       model: text-embedding-3-small
 
+  demo:
+    # Off unless the local profile or DEMO_SEED=true. Tests stay deterministic.
+    seed: ${DEMO_SEED:false}
+
+  chat:
+    top-k: 5
+    openai:
+      # Same key as embeddings. Blank uses an extractive answer that still returns citations.
+      api-key: ${OPENAI_API_KEY:}
+      model: gpt-4o-mini
+
   jwt:
     # HS256 signing key. MUST be overridden via JWT_SECRET outside local dev;
     # the app refuses to start if it is under 32 bytes (256 bits).

@@ -1,5 +1,6 @@
 package com.smartmgmt.management.task;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -13,4 +14,7 @@ public interface TaskRepository
     @Override
     @EntityGraph(attributePaths = {"project", "assignee"})
     Optional<Task> findById(UUID id);
+
+    @EntityGraph(attributePaths = {"assignee"})
+    List<Task> findByProjectIdOrderByDueDateAsc(UUID projectId);
 }
