@@ -12,6 +12,10 @@
     <button class="btn" (click)="load()">Apply</button>
   </div>
 
+  @if (error(); as err) {
+    <p class="error">{{ err }}</p>
+  }
+
   @if (loading()) {
     <p class="muted">Loading…</p>
   } @else if (tasks().length === 0) {

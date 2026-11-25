@@ -19,6 +19,10 @@
     <p class="error">{{ err }}</p>
   }
 
+  @if (!result() && !loading() && !error()) {
+    <div class="card empty">Search the documents you can see. Results show the passage and the file they came from.</div>
+  }
+
   @if (loading()) {
     <p class="muted">Searching…</p>
   } @else if (result(); as res) {
