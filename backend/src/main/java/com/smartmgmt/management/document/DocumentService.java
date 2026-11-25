@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.smartmgmt.audit.AuditService;
 import com.smartmgmt.auth.SecurityUtils;
 import com.smartmgmt.auth.UserPrincipal;
 import com.smartmgmt.common.NotFoundException;
@@ -42,16 +43,18 @@ public class DocumentService {
     private final DocumentStorageService storage;
     private final DocumentStorageProperties storageProperties;
     private final ApplicationEventPublisher events;
+    private final AuditService audit;
 
     public DocumentService(DocumentRepository documents, ProjectRepository projects, UserRepository users,
             DocumentStorageService storage, DocumentStorageProperties storageProperties,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events, AuditService audit) {
         this.documents = documents;
         this.projects = projects;
         this.users = users;
         this.storage = storage;
         this.storageProperties = storageProperties;
         this.events = events;
+        this.audit = audit;
     }
 
     public DocumentResponse upload(MultipartFile file, UUID projectId) {
@@ -86,6 +89,7 @@ public class DocumentService {
         document.setStatus(DocumentStatus.UPLOADED);
 
         Document saved = documents.save(document);
+        audit.record(saved.getUploadedBy(), "UPLOAD", "DOCUMENT", saved.getId(), saved.getName());
         // Handled after this transaction commits -- a worker that starts sooner
         // would look for a row that is not visible on its connection yet.
         events.publishEvent(new DocumentIngestRequestedEvent(saved.getId()));
@@ -140,6 +144,7 @@ public class DocumentService {
     public void delete(UUID id) {
         Document document = findOrThrow(id);
         requireVisible(document.getProject());
+        audit.record(currentUserEntity(), "DELETE", "DOCUMENT", document.getId(), document.getName());
         String storagePath = document.getStoragePath();
         documents.deleteById(document.getId());
         StorageCleanup.afterCommit(List.of(storagePath), storage::deleteQuietly);

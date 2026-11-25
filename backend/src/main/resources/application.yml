@@ -83,6 +83,10 @@ app:
       api-key: ${OPENAI_API_KEY:}
       model: gpt-4o-mini
 
+  auth:
+    # POST /api/auth/login per client address. Tests raise this so a suite can log in freely.
+    login-max-per-minute: ${LOGIN_MAX_PER_MINUTE:10}
+
   jwt:
     # HS256 signing key. MUST be overridden via JWT_SECRET outside local dev;
     # the app refuses to start if it is under 32 bytes (256 bits).

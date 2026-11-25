@@ -80,6 +80,35 @@ class AuthControllerTest extends IntegrationTest {
     }
 
     @Test
+    void reusedRefreshTokenRevokesTheReplacement() throws Exception {
+        String login = mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"manager@local","password":"manager123"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String refreshToken = JsonPath.read(login, "$.refreshToken");
+
+        String refreshed = mvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + refreshToken + "\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String replacement = JsonPath.read(refreshed, "$.refreshToken");
+
+        mvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + refreshToken + "\"}"))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + replacement + "\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void garbageTokenIsRejected() throws Exception {
         mvc.perform(get("/api/me").header(HttpHeaders.AUTHORIZATION, "Bearer not-a-real-token"))
                 .andExpect(status().isUnauthorized());
