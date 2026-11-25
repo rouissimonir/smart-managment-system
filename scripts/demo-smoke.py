@@ -42,6 +42,8 @@ def request(url, method="GET", payload=None, token=None, raw=None, content_type=
             except json.JSONDecodeError:
                 parsed = body.decode(errors="replace")
         return exc.code, parsed
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+        return 0, str(exc)
 
 
 def wait_until(label, predicate, seconds=180):

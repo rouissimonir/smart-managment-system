@@ -42,19 +42,17 @@ jobs:
   demo:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      JWT_SECRET: ci-demo-secret-must-be-at-least-32-bytes-long
+      OPENAI_API_KEY: ""
+      DEMO_SEED: "true"
     steps:
       - uses: actions/checkout@v4
       - name: Boot the demo stack
-        env:
-          JWT_SECRET: ci-demo-secret-must-be-at-least-32-bytes-long
-          OPENAI_API_KEY: ""
-          DEMO_SEED: "true"
         run: docker compose --profile demo up --build -d
       - name: Smoke test login, search, and chat
         run: python3 scripts/demo-smoke.py
       - name: Retrieval hit-rate with the offline client
-        env:
-          JWT_SECRET: ci-demo-secret-must-be-at-least-32-bytes-long
         run: |
           python3 eval/score.py --base http://localhost:8080 --mode KEYWORD --k 5
           python3 eval/score.py --base http://localhost:8080 --mode HYBRID --k 5
