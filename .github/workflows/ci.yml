@@ -18,7 +18,13 @@ jobs:
         working-directory: backend
         run: |
           chmod +x mvnw
-          ./mvnw -B test || ./mvnw -B test
+          if ! ./mvnw -B -v; then
+            w=$(command -v wget || true)
+            if [ -n "$w" ]; then
+              sudo mv "$w" "${w}.disabled"
+            fi
+          fi
+          ./mvnw -B test
 
   frontend:
     runs-on: ubuntu-latest
