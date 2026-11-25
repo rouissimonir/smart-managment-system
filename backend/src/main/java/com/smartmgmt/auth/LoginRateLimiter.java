@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,7 @@ public class LoginRateLimiter {
     private final Clock clock;
     private final ConcurrentHashMap<String, ArrayDeque<Long>> attempts = new ConcurrentHashMap<>();
 
+    @Autowired
     public LoginRateLimiter(@Value("${app.auth.login-max-per-minute:10}") int maxPerMinute) {
         this(maxPerMinute, Duration.ofMinutes(1), Clock.systemUTC());
     }
