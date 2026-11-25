@@ -1,6 +1,7 @@
 package com.smartmgmt.config;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +11,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.smartmgmt.management.customer.Customer;
 import com.smartmgmt.management.customer.CustomerRepository;
@@ -17,6 +20,7 @@ import com.smartmgmt.management.document.Document;
 import com.smartmgmt.management.document.DocumentRepository;
 import com.smartmgmt.management.document.DocumentStatus;
 import com.smartmgmt.management.document.DocumentStorageService;
+import com.smartmgmt.management.document.ingest.IngestionQueue;
 import com.smartmgmt.management.project.Project;
 import com.smartmgmt.management.project.ProjectRepository;
 import com.smartmgmt.management.project.ProjectStatus;
@@ -33,8 +37,9 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 
 /**
  * Idempotent demo rows: two customers, two projects, one assigned task, and the
- * two policy files the retrieval eval expects. Ingestion recovery (which runs
- * after this listener) picks the new documents up.
+ * two policy files the retrieval eval expects. Each new file is queued for
+ * ingestion after this transaction commits, so a fresh demo stack can search
+ * them without a second restart.
  */
 @Component
 @Order(0)
@@ -49,19 +54,22 @@ public class DemoDataLoader {
     private final TaskRepository tasks;
     private final DocumentRepository documents;
     private final DocumentStorageService storage;
+    private final IngestionQueue ingestion;
 
     @Getter
     @Setter
     private boolean seed = false;
 
     public DemoDataLoader(UserRepository users, CustomerRepository customers, ProjectRepository projects,
-            TaskRepository tasks, DocumentRepository documents, DocumentStorageService storage) {
+            TaskRepository tasks, DocumentRepository documents, DocumentStorageService storage,
+            IngestionQueue ingestion) {
         this.users = users;
         this.customers = customers;
         this.projects = projects;
         this.tasks = tasks;
         this.documents = documents;
         this.storage = storage;
+        this.ingestion = ingestion;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -138,9 +146,23 @@ public class DemoDataLoader {
             document.setProject(project);
             document.setUploadedBy(uploader);
             document.setStatus(DocumentStatus.UPLOADED);
-            documents.save(document);
+            Document saved = documents.save(document);
+            enqueueAfterCommit(saved.getId());
         } catch (Exception e) {
             log.warn("Could not seed {}", filename, e);
+        }
+    }
+
+    private void enqueueAfterCommit(UUID documentId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    ingestion.submit(documentId);
+                }
+            });
+        } else {
+            ingestion.submit(documentId);
         }
     }
 }
