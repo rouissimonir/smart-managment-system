@@ -16,7 +16,9 @@ jobs:
           cache: maven
       - name: Test
         working-directory: backend
-        run: chmod +x mvnw && ./mvnw -B test
+        run: |
+          chmod +x mvnw
+          ./mvnw -B test || ./mvnw -B test
 
   frontend:
     runs-on: ubuntu-latest

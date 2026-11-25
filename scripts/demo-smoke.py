@@ -18,7 +18,7 @@ UI = "http://localhost:8088"
 PHRASE = "zephyr quartz invoice 4821"
 
 
-def request(url, method="GET", payload=None, token=None, raw=None, content_type=None, timeout=30):
+def request(url, method="GET", payload=None, token=None, raw=None, content_type=None, timeout=30, parse_json=True):
     data = raw
     headers = {"Accept": "application/json"}
     if payload is not None:
@@ -32,6 +32,8 @@ def request(url, method="GET", payload=None, token=None, raw=None, content_type=
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
             body = response.read()
+            if not parse_json:
+                return response.status, body
             return response.status, json.loads(body) if body else None
     except urllib.error.HTTPError as exc:
         body = exc.read()
@@ -75,8 +77,8 @@ def main():
 
     wait_until("API health", health)
 
-    status, ui = request(UI + "/")
-    if status != 200:
+    status, ui = request(UI + "/", parse_json=False)
+    if status != 200 or b"<app-root" not in ui:
         raise SystemExit(f"Frontend did not serve the app: {status}")
     status, proxied = request(UI + "/api/health")
     if status != 200 or not isinstance(proxied, dict) or proxied.get("status") != "UP":
