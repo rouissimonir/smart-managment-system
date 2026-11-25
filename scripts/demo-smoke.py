@@ -170,6 +170,10 @@ def main():
     if "Zephyr Note.md" not in found:
         raise SystemExit(f"Uploaded note was not searchable: {status} {found}")
 
+    status, _ = request(API + f"/api/documents/{uploaded_id}", method="DELETE", token=manager, parse_json=False)
+    if status != 204:
+        raise SystemExit(f"Could not remove the smoke-test note: {status}")
+
     print("demo smoke ok")
     return 0
 

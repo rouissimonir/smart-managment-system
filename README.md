@@ -1,108 +1,64 @@
 # Smart Management System
 
-Enterprise project & knowledge platform: Angular + Spring Boot + PostgreSQL/pgvector,
-with a RAG assistant that answers from **app data and documents** (not a generic chatbot).
+[![ci](https://github.com/rouissimonir/smart-managment-system/actions/workflows/ci.yml/badge.svg)](https://github.com/rouissimonir/smart-managment-system/actions/workflows/ci.yml)
 
-The assistant answers from **this application's data and documents**. A question about
-who owns a project is a read-only tool call. A question about a policy is retrieval
-with citations. It does not get a SQL string, and it is told to say "I don't know"
-when the excerpts do not contain the answer.
+A project workspace where the assistant answers from **this application's data**, not from a generic chat model.
 
-Full roadmap: [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+Ask who owns a project and the API runs a fixed read-only tool. Ask what the refund policy says and it retrieves the passage, then cites the file. The model never receives a SQL string. With no `OPENAI_API_KEY` the same paths still run: keyword search is real, embeddings are a deterministic stand-in, and the assistant quotes the closest passage instead of inventing one.
+
+![Sign in](docs/screenshots/login.png)
 
 ## Architecture
 
-One Spring Boot JAR. Modules are packages, not services.
-
-```text
-Angular
-  │  JWT
-  ▼
-Spring Boot
-  ├── management   customers, projects, tasks
-  ├── documents    upload, extract, chunk, embed
-  ├── search       keyword (FTS) + semantic (pgvector) + RRF
-  └── chat         intent router → tools and/or RAG → citations
-         │
-         ▼
-PostgreSQL 16 + pgvector          local disk (uploads/)
+```mermaid
+flowchart TD
+  ui[Angular] -->|JWT| api[Spring Boot]
+  api --> mgmt[Projects, tasks, customers]
+  api --> docs[Upload, extract, chunk, embed]
+  api --> search[Keyword FTS + pgvector + RRF]
+  api --> chat[Intent router]
+  chat --> tools[Fixed read-only tools]
+  chat --> rag[Top-k chunks and citations]
+  mgmt --> pg[(PostgreSQL 16 + pgvector)]
+  docs --> pg
+  search --> pg
+  docs --> disk[Local uploads]
 ```
 
-```text
-question
-   │
-   ▼
-intent router (rules, not a model call)
-   ├── GENERAL     short help, no data
-   ├── SQL_DATA    fixed tools, caller's role applied inside the tool
-   ├── VECTOR_RAG  embed → top-k chunks the caller may see → answer + sources
-   └── HYBRID      tools and chunks, then one answer
+```mermaid
+flowchart TD
+  q[Question] --> router[Rules router]
+  router --> general[Help text]
+  router --> sql[SQL_DATA tools]
+  router --> rag[VECTOR_RAG]
+  router --> both[HYBRID: tools and chunks]
+  rag --> answer[Answer plus citations, or I don't know]
+  both --> answer
 ```
-
-## Stack
 
 | Layer | Choice |
 |---|---|
 | UI | Angular 20 |
-| API | Spring Boot 4.1.1, Java 21, single JAR |
-| Auth | Spring Security, JWT (access + refresh), roles `ADMIN` / `MANAGER` / `USER` |
-| Data | PostgreSQL 16 + pgvector |
-| Migrations | Flyway |
-| Ops | Docker Compose |
+| API | Spring Boot 4.1.1, Java 21, one JAR |
+| Auth | JWT access token (15 min) and hashed rotating refresh token (7 days) |
+| Data | PostgreSQL 16, pgvector, Flyway |
+| Documents | Disk storage, Apache Tika, 600-token chunks, async ingest |
+| Ops | Docker Compose demo profile, GitHub Actions |
 
-Spring Initializr currently offers Boot 4.x (3.x is out of OSS support), so this project
-uses **Spring Boot 4.1.1** on Java 21.
+## Quick start
 
-## Repo layout
-
-```
-smart-managment-sytem/
-  docker-compose.yml      # Postgres + pgvector
-  backend/                # Spring Boot API
-  frontend/               # Angular app
-  observability/          # Prometheus / Grafana (not wired)
-  eval/                   # retrieval dataset + hit-rate script
+```bash
+export JWT_SECRET="$(openssl rand -base64 32)"
+docker compose --profile demo up --build
 ```
 
-## Current status
+- UI: http://localhost:8088
+- API: http://localhost:8080
+- Sign in with `manager@local` / `manager123`
 
-| Milestone | Status |
-|---|---|
-| Scaffold (Compose, Flyway, Actuator, Angular, `/api/health`) | Done |
-| Core CRUD (customers, projects, tasks + UI + Testcontainers) | Done |
-| JWT + RBAC (`ADMIN` / `MANAGER` / `USER`) | Done |
-| Audit trail | **Next** |
-| Document upload (disk storage) | Done |
-| Extract → chunk → embeddings → pgvector (async) | Done |
-| Keyword + semantic search | Done (`GET /api/search`, keyword / semantic / hybrid) |
-| RAG chatbot + citations | Done (`POST /api/chat`, sources on every grounded answer) |
-| Database-aware chat (read-only tools) | Done (intent router + overdue / project / task / customer tools) |
-| Retrieval eval | Done (`eval/dataset.jsonl`, `eval/score.py`) |
-| Docker Compose demo + GitHub Actions | Done (not deployed to a public host) |
-| Redis, WebSocket, observability | Later |
+The demo profile loads two customers, two projects, one assigned task, and the policy files under `backend/src/main/resources/demo/`. Ingestion finishes in the background. Leave `OPENAI_API_KEY` empty for the offline client, or set it for `text-embedding-3-small` and `gpt-4o-mini`.
 
-## Auth & RBAC
-
-Spring Security + stateless JWT. `POST /api/auth/login` returns a short-lived access
-token (15 min, HS256) and an opaque refresh token (7 days); `POST /api/auth/refresh`
-rotates it (the old refresh token is revoked the moment a new one is issued), and
-`POST /api/auth/logout` revokes it outright. `GET /api/me` returns the caller's profile.
-Refresh tokens are stored hashed (HMAC-SHA256), never in plaintext.
-
-Every write endpoint and every list/get endpoint enforces `@PreAuthorize` on top of the
-stateless-session URL rule (`anyRequest().authenticated()`):
-
-| Role | Customers | Projects | Tasks |
-|---|---|---|---|
-| ADMIN | full CRUD | full CRUD | full CRUD |
-| MANAGER | full CRUD | full CRUD | full CRUD |
-| USER | read only | read/list **own projects only** | read/list **assigned tasks only**; can update status/description/title/due date on a task assigned to them (cannot reassign, unassign, or move it) |
-
-`GET /api/users` is ADMIN/MANAGER only. The project form and the task form use it
-for the owner and assignee dropdowns. A new project defaults the owner to the
-signed-in manager.
-
-Seed accounts (BCrypt-hashed, Flyway `V4__seed_users.sql`) for local dev/demo:
+`docker compose up -d db` starts only Postgres (host port **5433**). `./mvnw spring-boot:run` from `backend/` uses the `local` profile, which seeds data and still accepts the dev JWT secret. The `prod` profile, used by the demo container, refuses that default secret.
 
 | Email | Password | Role |
 |---|---|---|
@@ -110,257 +66,110 @@ Seed accounts (BCrypt-hashed, Flyway `V4__seed_users.sql`) for local dev/demo:
 | `manager@local` | `manager123` | MANAGER |
 | `user@local` | `user123` | USER |
 
-Change or remove these before any non-local deployment, and set a real `JWT_SECRET`
-(the app refuses to start with a signing key under 32 bytes).
+These accounts are for the local demo. Replace them, and `JWT_SECRET`, before any shared deployment.
 
-List endpoints also allowlist `?sort=` fields per resource, so a client cannot sort by
-a related entity's column (e.g. `owner.passwordHash`) — invalid fields get a 400.
+## What you can click through
 
-After that: Phase 3 audit trail, then extract/chunk/embed, then search/RAG. Do not start
-the chatbot until auth and document search work. See the plan for the rest.
+![Project with processed documents](docs/screenshots/project-documents.png)
 
-## Documents (upload + ingestion — Phases 4-6)
+A project shows its tasks, document status, chunk count, and an assistant scoped to that project.
 
-Files are stored on disk, not in the database — only their metadata is. Upload returns
-`202` immediately and ingestion runs in the background: `UPLOADED` → `PROCESSING` →
-`READY` (or `FAILED`).
+![Search hit](docs/screenshots/search.png)
 
-- Allowed types: PDF, DOCX, TXT, MD (checked by file extension, not the client's
-  `Content-Type`, since browsers send inconsistent values for `.md`).
-- Max size: 25 MB (`spring.servlet.multipart.max-file-size`, kept in sync with
-  `app.storage.max-file-size-bytes`).
-- A document can optionally belong to a project (`projectId`); one with no project is
-  a global upload.
+Search returns the passage, the file name, and a locator. Keyword, semantic, and hybrid (reciprocal rank fusion, k = 60) are separate modes.
 
-Visibility follows the same ownership rule as projects: ADMIN/MANAGER see and upload
-anything; a USER can only upload to, list, or download documents on a project they own,
-and cannot create a project-less (global) document at all.
+![Cited answer](docs/screenshots/chat-citations.png)
 
-Uploaded files are written under `app.storage.documents-dir` (default
-`backend/uploads/documents`, gitignored) with a generated UUID filename — the original
-name is only ever used for the `Content-Disposition` header on download, never as a
-path segment.
+A grounded answer keeps a citation chip. "I don't know." drops the sources.
 
-### Ingestion pipeline (Phase 5-6)
+![USER sees only owned projects](docs/screenshots/rbac-user-projects.png)
 
-```text
-POST /api/documents  ->  store bytes, INSERT documents(status=UPLOADED), COMMIT, 202
-                              |
-                    AFTER_COMMIT event -> bounded executor (2 threads)
-                              |
-   claim (UPDATE ... WHERE status IN ('UPLOADED','FAILED'))  -- one winner
-      -> extract (Tika; PDF keeps one segment per page)
-      -> clean  (collapse whitespace, drop NULs/soft hyphens)
-      -> chunk  (600 cl100k_base tokens, 90 overlap, page label per chunk)
-      -> embed  (batched, outside any transaction)
-      -> INSERT document_chunks + status READY        (one transaction)
-   failure at any step -> status FAILED + error_message, retry_count += 1
-```
+`user@local` sees Mobile rollout, the project they own, and does not get a New project button. Website revamp stays with the manager.
 
-Locked choices, and what they cost:
+The shots above are the Angular UI against a stand-in API so the pages are filled. The same screens are what the Compose demo serves after seed and ingestion.
 
-- **No broker.** The queue is an in-memory `ThreadPoolTaskExecutor` with a bounded queue
-  and `CallerRunsPolicy`, so a burst makes uploads slow rather than dropping them. A
-  restart still loses whatever is queued — which is why the *document row* is the real
-  queue: `IngestionRecovery` re-submits `UPLOADED` rows at startup and returns rows
-  abandoned in `PROCESSING` (older than `app.ingest.stale-processing-after`) to the queue.
-- **Enqueue after commit.** The listener is `@TransactionalEventListener(AFTER_COMMIT)`;
-  submitting inside the transaction races the worker against the insert.
-- **No transaction across the embedding call.** Every DB write is a short transaction in
-  `IngestionStore`; the HTTP call happens with nothing open, so it cannot pin a pooled
-  connection.
-- **Dimension is fixed at 1536** (`text-embedding-3-small`) by `vector(1536)` in `V6`.
-  A different model dimension is a new migration, not an `ALTER`; a mismatch between
-  `app.ingest.dimensions` and the column fails at startup rather than per row.
-- **Re-processing replaces.** `POST /api/documents/{id}/reprocess` (ADMIN/MANAGER, `409`
-  while `PROCESSING`) deletes the document's chunks before inserting new ones. There is
-  no automatic retry: an embeddings outage should surface as `FAILED`, not as a loop
-  that burns quota.
-- **No embeddings API key needed to run it.** With `app.ingest.openai.api-key` blank
-  (the default), a deterministic offline `HashEmbeddingClient` produces unit vectors, so
-  the pipeline and its tests run with no network. Those vectors carry no meaning —
-  semantic search needs a real key (`OPENAI_API_KEY`).
-- **HNSW index.** `V7` adds a cosine HNSW index on `document_chunks.embedding` and a
-  GIN index on a generated English `tsvector`. Hybrid search fuses the two legs with
-  reciprocal rank fusion (k = 60) over a pool of 40 hits each.
-- **No OCR.** A scanned PDF yields no text and ends `FAILED` with that message.
+## RBAC
 
-Chunks are internal: nothing returns their text yet. `GET /api/documents/{id}` exposes
-`status`, `chunkCount`, `embeddingModel`, `errorMessage` and `processedAt`.
+| | ADMIN | MANAGER | USER |
+|---|---|---|---|
+| Customers | full CRUD | full CRUD | read |
+| Projects | full CRUD | full CRUD | own projects only |
+| Tasks | full CRUD | full CRUD | assigned tasks; may update status, title, description, due date |
+| Documents | all | all | owned projects only; no project-less upload |
+| Reprocess | yes | yes | no |
+| User directory | yes | yes | no |
+| Audit log | yes | no | no |
+| Search and chat | all visible documents | all visible documents | owned projects only |
 
-Deleting a document deletes its chunks (`ON DELETE CASCADE`) and, after that
-transaction commits, the file on disk. Deleting a project does the same for
-every document that belonged to it. `DELETE /api/documents/{id}` follows the
-same visibility rule as download.
+Login is capped (10 attempts per minute per address, in memory). A refresh token that is presented again after rotation revokes every token in that family. `GET /actuator/health` and `GET /actuator/info` are public; other actuator paths require a token. Only health and info are exposed.
 
-A project created without an `ownerId` is owned by the caller. An update that
-omits `ownerId` keeps the current owner, so an edit form cannot accidentally
-clear it. The project form sends the selected owner explicitly.
+## Why tools, not free SQL
 
-## Search
-
-`GET /api/search` runs one of three modes:
-
-- `KEYWORD` — Postgres full-text search over chunk text and the document name (`english` config, so stemming applies). Ranked with `ts_rank_cd`.
-- `SEMANTIC` — the query is embedded with the same client as ingestion, then ordered by cosine distance (`<=>`) using the HNSW index.
-- `HYBRID` (default) — both legs, merged with reciprocal rank fusion.
-
-A `USER` only sees chunks on projects they own. A document with no project is visible to ADMIN and MANAGER. Passing `projectId` you cannot see returns 403. With no `OPENAI_API_KEY`, semantic order uses the offline hash vectors and the response sets `semanticMeaningful` to false; the search page says so. Keyword results do not depend on the key.
-
-## Assistant
-
-`POST /api/chat` embeds the question, retrieves the top 5 visible chunks, and asks the model to answer only from those excerpts. The reply is `{ answer, sources[] }` where each source has `documentId`, `name`, `locator`, and `chunkId`. If nothing is retrieved, or the model replies `I don't know.`, `sources` is empty.
-
-A `USER` must pass a `projectId` they own. ADMIN and MANAGER may ask globally. Conversations are private to the user who started them.
-
-With no `OPENAI_API_KEY` the assistant does not invent an answer: it returns the closest passage and the same citations. Set the key to use `gpt-4o-mini`.
-
-Questions are routed before any retrieval:
+The router is a small set of rules, not a model call, so a data question does not spend an embedding or a chat completion.
 
 | Intent | Example | What runs |
 |---|---|---|
-| `SQL_DATA` | Who owns Project Alpha? | Read-only tools against Postgres. No embedding call. |
-| `VECTOR_RAG` | What is the refund policy? | Top-k chunks and citations. |
-| `HYBRID` | Compare the refund policy with Project Alpha | Tools and chunks. |
-| `GENERAL` | What can you do? | A short help reply. No database and no documents. |
+| `SQL_DATA` | Who owns Website revamp? | A Java method: project by name, overdue count, tasks for a project, or customers not updated since a date |
+| `VECTOR_RAG` | What is the refund policy? | Embed the question, take the top 5 chunks the caller may see, answer from those excerpts |
+| `HYBRID` | Compare the refund policy with Website revamp | Both, then one answer |
+| `GENERAL` | What can you do? | A fixed help reply |
 
-The tools are fixed methods, not generated SQL: overdue project count, project by name (owner, status, due date), tasks on a project, customers not updated since a date. A `USER` only gets projects they own and tasks assigned to them. A project they cannot see is reported as not found.
-
-## Run it
-
-### 1. Database
-
-```bash
-docker compose up -d db
-```
-
-`docker compose up -d db` starts only Postgres. The `demo` profile (below) is what
-builds the API and the Angular image.
-
-### Demo stack
-
-```bash
-export JWT_SECRET="$(openssl rand -base64 32)"
-docker compose --profile demo up --build
-```
-
-The UI is http://localhost:8088 and the API is http://localhost:8080. The prod
-profile refuses to start when `JWT_SECRET` is still the dev default committed in
-`application.yml`. `OPENAI_API_KEY` is optional. Sample customers, projects, and
-the two policy files load when `DEMO_SEED` is true (the demo profile default).
-`./mvnw spring-boot:run` uses the `local` profile, which also seeds and still
-allows the dev JWT secret. Tests do not.
-
-This repository does not deploy that stack to a public host. CI (`.github/workflows/ci.yml`)
-runs the backend Testcontainers suite, the Angular test and production build, and
-`python3 eval/score.py --self-test`.
-
-Postgres listens on **host port 5433** (5432 is often taken by a native install).
-Credentials: `smartmgmt` / `smartmgmt`, database `smartmgmt`.
-
-### 2. Backend
-
-```bash
-cd backend
-./mvnw spring-boot:run
-```
-
-- API: http://localhost:8080
-- Liveness: `GET /api/health`
-- Actuator: `GET /actuator/health`
-
-Override DB with `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` if needed, and set `JWT_SECRET`
-to a real 32+ byte value outside local dev (there's a dev-only default otherwise).
-Uploaded documents are written under `backend/uploads/documents` by default (gitignored);
-override the location with `DOCUMENTS_DIR`.
-
-### 3. Frontend
-
-```bash
-cd frontend
-npm install
-npm start
-```
-
-- App: http://localhost:4200
-- `/api/*` is proxied to the backend (`proxy.conf.json`)
-- You'll land on `/login` — use one of the seed accounts above. Home shows a live
-  backend health indicator; the nav hides actions a role can't use (e.g. a USER never
-  sees "New project").
-
-## Tests
-
-```bash
-cd backend && ./mvnw test     # Testcontainers (Docker required)
-cd frontend && npm test
-```
-
-`AuthControllerTest` covers login/refresh-rotation/logout/`/api/me`; `RbacTest` and
-`ExpiredTokenTest` cover the milestone's "done when" criteria directly (USER blocked
-from `POST /api/projects`, MANAGER allowed, expired token rejected, bad sort field
-rejected). `DocumentControllerTest` covers upload → get → download → list-by-project
-and rejects an unsupported file type; `DocumentRbacTest` covers USER upload restricted
-to an owned project (and blocked for a project-less upload) plus the anonymous-401 case,
-and that reprocessing is ADMIN/MANAGER-only. `SearchRankingTest` covers reciprocal rank
-fusion and snippets. `GroundingTest` checks that "I don't know." drops citations.
-`IntentRouterTest` and `ChatRoutingTest` check that "Who owns Project Alpha?" stays on
-the tool path and "What is the refund policy?" calls retrieval instead. `ChunkerTest` pins the window arithmetic
-(contiguous indices, real overlap, page labels, full coverage); `DocumentIngestionTest`
-runs the pipeline end to end against Postgres — READY with 1536-dim vectors, page labels
-from a generated two-page PDF, a corrupt file ending FAILED with a message, reprocess
-replacing rather than appending chunks, and cascade delete. It is deliberately *not*
-`@Transactional`: ingestion fires after commit, so a rolled-back test would never
-trigger it.
-
-## API (current)
-
-| Resource | Endpoints | Filters |
-|---|---|---|
-| Auth | `POST /api/auth/login`, `refresh`, `logout`, `GET /api/me` | — |
-| Customers | `GET/POST /api/customers`, `GET/PUT/DELETE /api/customers/{id}` | `q` |
-| Projects | `GET/POST /api/projects`, `GET/PUT/DELETE /api/projects/{id}` | `q`, `status`, `customerId`, `ownerId`, `overdue` |
-| Tasks | `GET/POST /api/tasks`, `GET/PUT/DELETE /api/tasks/{id}` | `q`, `status`, `projectId`, `assigneeId` |
-| Documents | `POST /api/documents` (multipart, `file` + optional `projectId`), `GET /api/documents/{id}`, `GET /api/documents/{id}/download`, `DELETE /api/documents/{id}`, `POST /api/documents/{id}/reprocess` (ADMIN/MANAGER), `GET /api/projects/{id}/documents` | — |
-| Users | `GET /api/users` (ADMIN/MANAGER) — id, email, full name, role. No password hash | — |
-| Search | `GET /api/search?q=&mode=KEYWORD\|SEMANTIC\|HYBRID&projectId=&page=&size=` | `projectId` |
-| Chat | `POST /api/chat` `{ conversationId?, projectId?, message }`, `GET /api/chat/conversations/{id}` | — |
-
-All endpoints except `/api/auth/**` and `/api/health` require a `Bearer` access token.
-List endpoints take `page`, `size` (max 100), `sort` (allowlisted per resource). Bodies
-use DTOs; lists return a `PageResponse` envelope. Validation errors are RFC 9457
-`ProblemDetail` (400 + `errors`); unknown ids return 404; RBAC/ownership denials return
-403; missing/invalid/expired tokens return 401.
+Each tool is a query written in the repository. The caller's role is applied inside that method: a USER does not learn that a hidden project exists. There is no path that concatenates the question into SQL, so the model cannot widen the query, and a prompt cannot become a statement.
 
 ## Evaluation
 
-`eval/dataset.jsonl` holds retrieval questions. Each scored row names the file that
-should appear in the top results. `eval/score.py` logs in, calls `GET /api/search`,
-and prints hit-rate. Rows with `expected_source: null` are listed and not scored.
+`eval/dataset.jsonl` has 10 questions. Nine name the file that should appear in the top 5 hits. One ("office wifi password") has no source and is not scored. `eval/score.py` logs in and calls `GET /api/search`.
+
+The cancellation question is written so keyword search misses it: the file is `Account Closure Terms.md` and the body says "subscription termination", not "cancellation". That row is the semantic check. It needs `OPENAI_API_KEY` and a reprocess. Do not treat an offline semantic score as a model score. The offline client sets `semanticMeaningful` to false.
+
+Keyword search ORs the English lexemes, so one matching word is enough. `plainto_tsquery` would AND them, and a question like "how long do customers have to request a refund?" would miss because "long" is not in the file.
+
+The demo CI job scores the seeded policies with the offline client, after the smoke upload has been deleted. Numbers below are from that job on this branch.
+
+<!-- EVAL_NUMBERS -->
+| Mode | Hit-rate@5 | Run |
+|---|---|---|
+| KEYWORD | filled after CI | |
+| HYBRID | filled after CI | |
+<!-- /EVAL_NUMBERS -->
+
+On an earlier run, before the OR change and while a smoke-test upload was still in the index, keyword was 5/9 and hybrid was 9/9. The hybrid 9/9 counted the cancellation question as a hit because three short documents all fit in the top 5. That is not a semantic result. The offline hash still sets `semanticMeaningful` to false.
 
 ```bash
 python3 eval/score.py --self-test
-python3 eval/score.py --base http://localhost:8080 --email manager@local --password manager123 --mode HYBRID --k 5
+python3 eval/score.py --base http://localhost:8080 --mode KEYWORD --k 5
+python3 eval/score.py --base http://localhost:8080 --mode HYBRID --k 5
 ```
 
-The two policy files the questions refer to ship in `backend/src/main/resources/demo/`.
-They have to be uploaded (or loaded by the demo seeder) and finish ingestion before a
-live score means anything. Keyword mode can hit "Refund Policy.md" because the body
-says "refund" and "30 days". "What is the customer cancellation policy?" should miss
-on keyword search: the file is named "Account Closure Terms.md" and the body says
-"subscription termination". That question is the semantic check, and it needs
-`OPENAI_API_KEY` plus a reprocess so the stored vectors are not the offline hash.
+## Tests and CI
 
-Change one knob (chunk size in `application.yml`, or `--k`), run the script again,
-and record both rates. This README does not invent a before/after number.
+```bash
+cd backend && ./mvnw test          # Testcontainers, Docker required
+cd frontend && npx ng test --watch=false --browsers=ChromeHeadless
+cd frontend && npx ng build --configuration=production
+python3 scripts/demo-smoke.py      # stack already running
+```
 
-`eval/score.py --self-test` checks the scorer itself and does not need the API.
+GitHub Actions runs the backend suite, the Angular test and production build, the scorer self-test, and a Compose job that boots the demo profile, signs in, waits for the seeded documents, searches, chats, uploads a note, and prints hit-rate.
 
-## Known gaps
+## Limitations and roadmap
 
-- The **audit trail (Phase 3) was skipped** — the plan's order was audit → documents →
-  ingestion, and ingestion was built first. `audit_log` does not exist yet.
-- Ingestion writes no audit rows. When Phase 3 lands, note that the worker thread has no
-  `SecurityContext` (it is not the request thread, and the uploader's token may have
-  expired), so the actor must come from `documents.uploaded_by`, not
-  `SecurityUtils.currentUser()`.
-- A `USER` cannot trigger reprocessing even on their own document, by design.
+- Semantic order is meaningless until `OPENAI_API_KEY` is set. Keyword search and cited extractive answers work without it.
+- Ingestion and the login limiter live in memory. A restart re-queues documents from the `UPLOADED` / stale `PROCESSING` rows, but a second instance would not share the queue or the limiter.
+- The audit log records login, project create/update/delete, and document upload/delete. It is `GET /api/audit` for ADMIN. There is no audit screen.
+- This repository does not deploy the stack to a public host. Compose is the demo.
+- Redis, WebSockets, and the Grafana stack under `observability/` are not wired.
+
+## API
+
+| Resource | Endpoints |
+|---|---|
+| Auth | `POST /api/auth/login`, `refresh`, `logout`, `GET /api/me` |
+| Customers, projects, tasks | CRUD, paged lists |
+| Documents | `POST /api/documents`, `GET/DELETE /api/documents/{id}`, download, reprocess, `GET /api/projects/{id}/documents` |
+| Users | `GET /api/users` (ADMIN, MANAGER) |
+| Search | `GET /api/search?q=&mode=KEYWORD\|SEMANTIC\|HYBRID` |
+| Chat | `POST /api/chat`, `GET /api/chat/conversations/{id}` |
+| Audit | `GET /api/audit` (ADMIN) |
+
+Everything except `/api/auth/**`, `/api/health`, `/actuator/health`, and `/actuator/info` requires a bearer token. Lists take `page`, `size` (max 100), and an allowlisted `sort`.

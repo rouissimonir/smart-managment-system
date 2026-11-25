@@ -33,7 +33,7 @@ public class SearchRepository {
               FROM document_chunks c
               JOIN documents d ON d.id = c.document_id
               LEFT JOIN projects p ON p.id = d.project_id,
-                   plainto_tsquery('english', :q) query
+                   (SELECT COALESCE(NULLIF(replace(plainto_tsquery('english', :q)::text, ' & ', ' | '), ''), 'nomatch')::tsquery) query
              WHERE (c.content_tsv @@ query OR to_tsvector('english', d.name) @@ query)
             """;
 
