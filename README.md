@@ -120,20 +120,18 @@ Each tool is a query written in the repository. The caller's role is applied ins
 
 `eval/dataset.jsonl` has 10 questions. Nine name the file that should appear in the top 5 hits. One ("office wifi password") has no source and is not scored. `eval/score.py` logs in and calls `GET /api/search`.
 
-The cancellation question is written so keyword search misses it: the file is `Account Closure Terms.md` and the body says "subscription termination", not "cancellation". That row is the semantic check. It needs `OPENAI_API_KEY` and a reprocess. Do not treat an offline semantic score as a model score. The offline client sets `semanticMeaningful` to false.
+Keyword search ORs the English lexemes, so one matching word is enough. `plainto_tsquery` ANDs them, and a question such as "how long do customers have to request a refund?" would miss because "long" is not in the file.
 
-Keyword search ORs the English lexemes, so one matching word is enough. `plainto_tsquery` would AND them, and a question like "how long do customers have to request a refund?" would miss because "long" is not in the file.
+The cancellation question was written as a semantic check: the file is `Account Closure Terms.md` and the body says "subscription termination". On this seed it is also a keyword hit. That file contains "cancelled" (the same English stem as "cancellation") and the word "policy". With two short documents and k = 5, both modes place the expected file in the top 5 for every scored question. That is a corpus result. It is not an embedding score. The offline client sets `semanticMeaningful` to false. A semantic number needs `OPENAI_API_KEY` and a reprocess.
 
-The demo CI job scores the seeded policies with the offline client, after the smoke upload has been deleted. Numbers below are from that job on this branch.
+The demo CI job scores the seeded policies with the offline client, after the smoke upload has been deleted. Measured on [run 45596580957](https://github.com/rouissimonir/smart-managment-system/actions/runs/45596580957) (`95200d9`, 25 Nov 2026, 11:37 Africa/Tunis):
 
-<!-- EVAL_NUMBERS -->
-| Mode | Hit-rate@5 | Run |
-|---|---|---|
-| KEYWORD | filled after CI | |
-| HYBRID | filled after CI | |
-<!-- /EVAL_NUMBERS -->
+| Mode | Hit-rate@5 |
+|---|---|
+| KEYWORD | 9/9 (100%) |
+| HYBRID | 9/9 (100%) |
 
-On an earlier run, before the OR change and while a smoke-test upload was still in the index, keyword was 5/9 and hybrid was 9/9. The hybrid 9/9 counted the cancellation question as a hit because three short documents all fit in the top 5. That is not a semantic result. The offline hash still sets `semanticMeaningful` to false.
+An earlier run on the same seed, before lexemes were OR-ed and while the smoke-test upload was still indexed, scored keyword 5/9 and hybrid 9/9. The keyword misses were questions whose extra words are not in the files. Hybrid still listed every document inside k = 5.
 
 ```bash
 python3 eval/score.py --self-test
