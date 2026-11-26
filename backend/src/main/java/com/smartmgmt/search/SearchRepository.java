@@ -28,13 +28,13 @@ public class SearchRepository {
 
     private static final String KEYWORD = """
             SELECT c.id, c.document_id, d.name, d.project_id, c.content, c.page_or_section,
-                   ts_rank_cd(c.content_tsv, query)
-                       + ts_rank_cd(to_tsvector('english', d.name), query) AS score
+                   ts_rank_cd(c.content_tsv, parsed.query)
+                       + ts_rank_cd(to_tsvector('english', d.name), parsed.query) AS score
               FROM document_chunks c
               JOIN documents d ON d.id = c.document_id
               LEFT JOIN projects p ON p.id = d.project_id,
-                   plainto_tsquery('english', :q) query
-             WHERE (c.content_tsv @@ query OR to_tsvector('english', d.name) @@ query)
+                   (SELECT COALESCE(NULLIF(replace(plainto_tsquery('english', :q)::text, ' & ', ' | '), ''), 'nomatch')::tsquery AS query) parsed
+             WHERE (c.content_tsv @@ parsed.query OR to_tsvector('english', d.name) @@ parsed.query)
             """;
 
     private static final String SEMANTIC = """

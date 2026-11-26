@@ -16,7 +16,15 @@ jobs:
           cache: maven
       - name: Test
         working-directory: backend
-        run: chmod +x mvnw && ./mvnw -B test
+        run: |
+          chmod +x mvnw
+          if ! ./mvnw -B -v; then
+            w=$(command -v wget || true)
+            if [ -n "$w" ]; then
+              sudo mv "$w" "${w}.disabled"
+            fi
+          fi
+          ./mvnw -B test
 
   frontend:
     runs-on: ubuntu-latest
@@ -38,3 +46,24 @@ jobs:
         run: npx ng build --configuration=production
       - name: Eval scorer self-test
         run: python3 eval/score.py --self-test
+
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      JWT_SECRET: ci-demo-secret-must-be-at-least-32-bytes-long
+      OPENAI_API_KEY: ""
+      DEMO_SEED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot the demo stack
+        run: docker compose --profile demo up --build -d
+      - name: Smoke test login, search, and chat
+        run: python3 scripts/demo-smoke.py
+      - name: Retrieval hit-rate with the offline client
+        run: |
+          python3 eval/score.py --base http://localhost:8080 --mode KEYWORD --k 5
+          python3 eval/score.py --base http://localhost:8080 --mode HYBRID --k 5
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --profile demo logs

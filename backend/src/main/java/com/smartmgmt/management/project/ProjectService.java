@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.smartmgmt.audit.AuditService;
 import com.smartmgmt.auth.SecurityUtils;
 import com.smartmgmt.auth.UserPrincipal;
 import com.smartmgmt.common.NotFoundException;
@@ -35,14 +36,16 @@ public class ProjectService {
     private final UserRepository users;
     private final DocumentRepository documents;
     private final DocumentStorageService storage;
+    private final AuditService audit;
 
     public ProjectService(ProjectRepository projects, CustomerRepository customers, UserRepository users,
-            DocumentRepository documents, DocumentStorageService storage) {
+            DocumentRepository documents, DocumentStorageService storage, AuditService audit) {
         this.projects = projects;
         this.customers = customers;
         this.users = users;
         this.documents = documents;
         this.storage = storage;
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -69,19 +72,22 @@ public class ProjectService {
     public ProjectResponse create(ProjectRequest request) {
         Project project = new Project();
         apply(project, request, true);
-        return ProjectResponse.from(projects.save(project));
+        Project saved = projects.save(project);
+        audit.record(currentUserEntity(), "CREATE", "PROJECT", saved.getId(), saved.getName());
+        return ProjectResponse.from(saved);
     }
 
     public ProjectResponse update(UUID id, ProjectRequest request) {
         Project project = findOrThrow(id);
         apply(project, request, false);
-        return ProjectResponse.from(projects.save(project));
+        Project saved = projects.save(project);
+        audit.record(currentUserEntity(), "UPDATE", "PROJECT", saved.getId(), saved.getName());
+        return ProjectResponse.from(saved);
     }
 
     public void delete(UUID id) {
-        if (!projects.existsById(id)) {
-            throw new NotFoundException("Project", id);
-        }
+        Project project = findOrThrow(id);
+        audit.record(currentUserEntity(), "DELETE", "PROJECT", project.getId(), project.getName());
         // Capture paths before the database cascade removes the document rows.
         List<String> paths = documents.findByProjectIdOrderByCreatedAtDesc(id).stream()
                 .map(document -> document.getStoragePath())

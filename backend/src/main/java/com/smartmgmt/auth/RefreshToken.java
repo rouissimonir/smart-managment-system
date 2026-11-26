@@ -1,6 +1,7 @@
 package com.smartmgmt.auth;
 
 import java.time.Instant;
+import java.util.UUID;
 
 import com.smartmgmt.common.BaseEntity;
 import com.smartmgmt.management.user.User;
@@ -18,7 +19,8 @@ import lombok.Setter;
  * A hashed, revocable refresh token. The raw value is only ever returned to
  * the client once, at issue time; only its HMAC
  * ({@link JwtService#hashRefreshToken}) is stored here. Refresh rotates the
- * token: the old row is marked revoked and a new one is inserted.
+ * token: the old row is marked revoked and a new one is inserted in the same
+ * family. Replaying a revoked token revokes the whole family.
  */
 @Getter
 @Setter
@@ -32,6 +34,9 @@ public class RefreshToken extends BaseEntity {
 
     @Column(name = "token_hash", nullable = false, unique = true)
     private String tokenHash;
+
+    @Column(name = "family_id", nullable = false)
+    private UUID familyId;
 
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;

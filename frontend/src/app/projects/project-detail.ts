@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { ChatPanel } from '../chat/chat-panel';
 import { AuthService } from '../core/auth.service';
+import { ConfirmService } from '../core/confirm.service';
 import { AppDocument } from '../documents/document';
 import { DocumentService } from '../documents/document.service';
 import { TASK_STATUSES, Task } from '../tasks/task';
@@ -28,6 +29,7 @@ export class ProjectDetail {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly auth = inject(AuthService);
+  private readonly confirm = inject(ConfirmService);
 
   private readonly id = this.route.snapshot.paramMap.get('id')!;
   private readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
@@ -39,6 +41,7 @@ export class ProjectDetail {
   protected readonly users = signal<UserSummary[]>([]);
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
+  protected readonly loadError = signal<string | null>(null);
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
   protected readonly taskForm = this.fb.nonNullable.group({
@@ -50,7 +53,10 @@ export class ProjectDetail {
 
   constructor() {
     this.destroyRef.onDestroy(() => this.stopPolling());
-    this.projectService.get(this.id).subscribe((p) => this.project.set(p));
+    this.projectService.get(this.id).subscribe({
+      next: (p) => this.project.set(p),
+      error: () => this.loadError.set('This project could not be loaded.'),
+    });
     this.loadTasks();
     this.loadDocuments();
     if (this.auth.hasRole('ADMIN', 'MANAGER')) {
@@ -121,8 +127,11 @@ export class ProjectDetail {
   }
 
   removeTask(t: Task): void {
-    if (!confirm(`Delete task "${t.title}"?`)) return;
-    this.taskService.delete(t.id).subscribe(() => this.loadTasks());
+    void this.confirm.ask(`Delete task "${t.title}"?`).then((accepted) => {
+      if (accepted) {
+        this.taskService.delete(t.id).subscribe(() => this.loadTasks());
+      }
+    });
   }
 
   uploadDocument(): void {
@@ -154,8 +163,11 @@ export class ProjectDetail {
   }
 
   removeDocument(doc: AppDocument): void {
-    if (!confirm(`Delete document "${doc.name}"?`)) return;
-    this.documentService.remove(doc.id).subscribe(() => this.loadDocuments());
+    void this.confirm.ask(`Delete document "${doc.name}"?`).then((accepted) => {
+      if (accepted) {
+        this.documentService.remove(doc.id).subscribe(() => this.loadDocuments());
+      }
+    });
   }
 
   formatSize(bytes: number): string {
@@ -166,7 +178,11 @@ export class ProjectDetail {
 
   deleteProject(): void {
     const p = this.project();
-    if (!p || !confirm(`Delete project "${p.name}" and its tasks?`)) return;
-    this.projectService.delete(p.id).subscribe(() => this.router.navigate(['/projects']));
+    if (!p) return;
+    void this.confirm.ask(`Delete project "${p.name}" and its tasks?`).then((accepted) => {
+      if (accepted) {
+        this.projectService.delete(p.id).subscribe(() => this.router.navigate(['/projects']));
+      }
+    });
   }
 }

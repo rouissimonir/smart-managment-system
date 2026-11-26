@@ -3,5 +3,8 @@
 {"id": "refund-digital", "question": "Are digital services refundable after the window?", "expected_source": "Refund Policy.md", "gold_phrase": "not refundable"}
 {"id": "termination-body", "question": "When does subscription termination take effect?", "expected_source": "Account Closure Terms.md", "gold_phrase": "end of the current billing period"}
 {"id": "closure-files", "question": "How long after termination are stored files deleted?", "expected_source": "Account Closure Terms.md", "gold_phrase": "14 days"}
+{"id": "refund-exception", "question": "Who can approve a refund exception?", "expected_source": "Refund Policy.md", "gold_phrase": "account owner"}
+{"id": "closure-fees", "question": "Are fees already paid returned when a subscription ends?", "expected_source": "Account Closure Terms.md", "gold_phrase": "not returned"}
+{"id": "closure-projects", "question": "What happens to open projects when the termination date is reached?", "expected_source": "Account Closure Terms.md", "gold_phrase": "marked cancelled"}
 {"id": "cancellation-semantic", "question": "What is the customer cancellation policy?", "expected_source": "Account Closure Terms.md", "gold_phrase": "subscription termination"}
 {"id": "unanswerable", "question": "What is the office wifi password?", "expected_source": null, "expect_unknown": true}

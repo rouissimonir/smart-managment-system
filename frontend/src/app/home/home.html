@@ -1,14 +1,33 @@
-<main class="home">
-  <h1>Smart Management System</h1>
-  <p class="subtitle">AI-Powered Management &amp; Knowledge Platform</p>
+<main class="container">
+  <div class="page-header">
+    <div>
+      <h1>Overview</h1>
+      <p class="muted" style="margin:0.25rem 0 0">Work the team can see, and answers grounded in its documents.</p>
+    </div>
+  </div>
 
   <section class="status-card" [class.up]="status() === 'up'" [class.down]="status() === 'down'">
     <span class="dot"></span>
     @switch (status()) {
-      @case ('checking') { <span>Checking backend…</span> }
-      @case ('up') { <span>Backend is up</span> }
-      @case ('down') { <span>Backend is down</span> }
+      @case ('checking') { <span>Checking the API…</span> }
+      @case ('up') { <span>API is up</span> }
+      @case ('down') { <span>API is down</span> }
     }
     @if (detail()) { <small>{{ detail() }}</small> }
   </section>
+
+  <div class="home-grid">
+    <a class="card" routerLink="/projects">
+      <h2>Projects</h2>
+      <p>Customers, owners, due dates, and the tasks under each project.</p>
+    </a>
+    <a class="card" routerLink="/search">
+      <h2>Search</h2>
+      <p>Keyword and semantic search over documents you are allowed to read.</p>
+    </a>
+    <a class="card" routerLink="/chat">
+      <h2>Assistant</h2>
+      <p>Tools for project facts. Retrieval with citations for policy questions.</p>
+    </a>
+  </div>
 </main>

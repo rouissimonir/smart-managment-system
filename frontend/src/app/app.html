@@ -1,18 +1,20 @@
 @if (auth.isAuthenticated()) {
   <nav class="appnav">
     <div class="inner">
-      <a class="brand" routerLink="/">Smart MS</a>
+      <a class="brand" routerLink="/">Smart Management</a>
       <a routerLink="/projects" routerLinkActive="active">Projects</a>
       <a routerLink="/customers" routerLinkActive="active">Customers</a>
       <a routerLink="/tasks" routerLinkActive="active">Tasks</a>
       <a routerLink="/search" routerLinkActive="active">Search</a>
       <a routerLink="/chat" routerLinkActive="active">Assistant</a>
-      <span class="muted" style="margin-left:auto; font-size:0.85rem">
-        {{ auth.user()?.email }} &middot; {{ auth.user()?.role }}
+      <span class="who">
+        <span class="who-email">{{ auth.user()?.email }}</span>
+        <span class="badge">{{ auth.user()?.role }}</span>
       </span>
-      <button class="btn btn-sm" (click)="logout()">Log out</button>
+      <button class="btn btn-sm" type="button" (click)="logout()">Log out</button>
     </div>
   </nav>
 }
 
 <router-outlet />
+<app-confirm-dialog />

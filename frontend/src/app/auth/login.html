@@ -1,28 +1,40 @@
-<div class="container" style="max-width: 380px; margin-top: 3rem">
-  <div class="card">
-    <h1 style="margin-top:0; font-size:1.3rem">Sign in</h1>
-    <form [formGroup]="form" (ngSubmit)="submit()">
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" type="email" formControlName="email" placeholder="admin@local" />
-        @if (form.controls.email.touched && form.controls.email.invalid) {
-          <span class="error">Enter a valid email.</span>
-        }
-      </div>
-
-      <div class="field">
-        <label for="password">Password</label>
-        <input id="password" type="password" formControlName="password" />
-      </div>
-
-      @if (error()) { <p class="error">{{ error() }}</p> }
-
-      <button class="btn btn-primary" type="submit" [disabled]="loading()">
-        {{ loading() ? 'Signing in…' : 'Sign in' }}
-      </button>
-    </form>
-    <p class="muted" style="margin-top:1rem; font-size: 0.8rem">
-      Seed accounts: admin&#64;local / admin123 &middot; manager&#64;local / manager123 &middot; user&#64;local / user123
+<div class="login-wrap">
+  <section class="login-pitch">
+    <h1>Smart Management</h1>
+    <p>
+      Projects, tasks, and the documents that belong to them. Ask who owns a project,
+      or what a policy says, and the answer comes from this application's data with a citation.
     </p>
-  </div>
+  </section>
+  <section class="login-panel">
+    <div class="card">
+      <h1 style="margin-top:0; font-size:1.3rem">Sign in</h1>
+      <form [formGroup]="form" (ngSubmit)="submit()">
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" type="email" formControlName="email" placeholder="manager@local" autocomplete="username" />
+          @if (form.controls.email.touched && form.controls.email.invalid) {
+            <span class="error">Enter a valid email.</span>
+          }
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" type="password" formControlName="password" autocomplete="current-password" />
+          @if (form.controls.password.touched && form.controls.password.invalid) {
+            <span class="error">Password is required.</span>
+          }
+        </div>
+
+        @if (error(); as err) { <p class="error">{{ err }}</p> }
+
+        <button class="btn btn-primary" type="submit" [disabled]="loading()">
+          {{ loading() ? 'Signing in…' : 'Sign in' }}
+        </button>
+      </form>
+      <p class="muted" style="margin-top:1rem; font-size: 0.8rem">
+        Local demo: admin&#64;local / admin123, manager&#64;local / manager123, user&#64;local / user123
+      </p>
+    </div>
+  </section>
 </div>

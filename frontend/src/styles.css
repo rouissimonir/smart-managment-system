@@ -120,5 +120,60 @@ nav.appnav {
 }
 nav.appnav .inner { max-width: 1000px; margin: 0 auto; display: flex; gap: 1.25rem; align-items: center; height: 52px; }
 nav.appnav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; font-weight: 500; }
-nav.appnav a.active { color: var(--text); }
-nav.appnav .brand { font-weight: 700; color: var(--text); }
+nav.appnav a.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--primary); }
+nav.appnav .brand { font-weight: 700; color: var(--text); margin-right: 0.5rem; }
+nav.appnav .who { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--muted); }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: var(--primary);
+  font-size: 0.78rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 20;
+}
+.modal { max-width: 420px; width: 100%; }
+.modal h2 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+.modal p { margin: 0 0 1rem; }
+
+.login-wrap {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 420px);
+}
+.login-pitch {
+  background: #1d2939;
+  color: #f8fafc;
+  padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.login-pitch h1 { margin: 0 0 0.6rem; font-size: 2rem; }
+.login-pitch p { color: #d0d5dd; line-height: 1.5; max-width: 36rem; }
+.login-panel { display: flex; align-items: center; padding: 2rem; }
+.login-panel .card { width: 100%; }
+@media (max-width: 800px) {
+  .login-wrap { grid-template-columns: 1fr; }
+  .login-pitch { padding: 2rem 1.5rem; }
+}
+
+.home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem; margin-top: 1.25rem; }
+.home-grid a { text-decoration: none; color: inherit; }
+.home-grid h2 { margin: 0 0 0.3rem; font-size: 1rem; }
+.home-grid p { margin: 0; color: var(--muted); font-size: 0.9rem; }

@@ -12,7 +12,7 @@
         @if (turn.sources.length) {
           <div class="row-actions" style="justify-content:flex-start; flex-wrap:wrap">
             @for (source of turn.sources; track source.chunkId) {
-              <button class="btn btn-sm" type="button" (click)="openSource(source)">
+              <button class="chip" type="button" (click)="openSource(source)">
                 {{ source.name }}{{ source.locator ? ' · ' + source.locator : '' }}
               </button>
             }
